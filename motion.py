@@ -1,4 +1,6 @@
 import torch
+import matplotlib.pyplot as plt 
+import numpy as np
 
 class EquationsOfMotion:
 
@@ -44,4 +46,20 @@ class EquationsOfMotion:
 
     def y(self, t: torch.double):
         return -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.x_0
+    
+    def plot(self):
+        x = torch.arange(-5, 5, 0.1)
+        y = torch.arange(-5, 5, 0.1)
+        X,Y = np.meshgrid(x,y)
+        EX = -(Y - self.x_0) * self.omega
+        EY = (X - self.x_0) * self.omega
+
+        # Depict illustration 
+        plt.figure(figsize=(10, 10)) 
+        plt.streamplot(X, Y, EX, EY, density=1.4, linewidth=None, color='#A23BEC')
+        plt.title('Motion on the x-y plane') 
+        
+        # Show plot with grid 
+        plt.grid() 
+        plt.show()
 
