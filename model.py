@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from motion import EquationsOfMotion
+from motion import InfGenerator
 
 class FNN(nn.Module):
     def __init__(self, input_dim=3, hidden_dim=100, output_dim=3):
@@ -18,8 +18,18 @@ class FNN(nn.Module):
         # w1: 3 x 100
         self.w1 = torch.randn(self.input_dim, self.hidden_dim, requires_grad=True)
 
-        # w2: 100 x 3
-        self.w2 = torch.randn(self.hidden_dim, self.output_dim, requires_grad=True)
+        # w2: 100 x 100
+        self.w2 = torch.randn(self.hidden_dim, self.hidden_dim, requires_grad=True)
+
+        # w3: 100 x 3
+        self.w3 = torch.randn(self.hidden_dim, self.output_dim, requires_grad=True)
+
+        # create infenitisimal generator
+        self.gen = InfGenerator()
+
+        # Initialize dynamical system
+        self.sys = self.gen.sys
+
 
     def sigmoid(self, s):
         return 1 / (1 + torch.exp(-s))
@@ -39,59 +49,48 @@ class FNN(nn.Module):
         self.y3 = torch.matmul(self.y2, self.w2)
 
         # Second non-linearity
-        y4 = self.sigmoid(self.y3)
-        return y4
+        self.y4 = self.sigmoid(self.y3)
+
+        # Third linear layer
+        self.y5 = torch.matmul(self.y4, self.w3)
+        return self.y5
     
     # Time derivative of forward function
-    def d_dt_forward(self, y4, t):
-        dy4_dy3 = self.sigmoid_first_derivative(y4) # N x 3
-        dy4_dy2 = torch.matmul(dy4_dy3, torch.t(self.w2)) # N x 100
+    def d_dt_forward(self, t):
+        dy5_dy4 = self.w3 # 100 x 3
+        dy4_dy3 = self.sigmoid_first_derivative(self.y4) # N x 100
+        dy4_dy2 = torch.matmul(dy4_dy3, self.w2.T) # 100 x 100
         dy2_dy1 = self.sigmoid_first_derivative(self.y2) # N x 100
-        dy4_dy1 = torch.matmul(torch.t(dy4_dy2), dy2_dy1) # 100 x 100
-        return torch.matmul(dy4_dy1, self.w1) # 100 x 3
+        dy4_dy1 = torch.matmul(dy4_dy2.T, dy2_dy1) # 100 x 100
+        dy5_dy1 = torch.matmul(dy5_dy4.T, dy4_dy1) # 3 x 100
+        dy5_dq = torch.matmul(dy5_dy1, self.w1.T) # 3 x 3
+        ddt_dy5_dq = torch.matmul(dy5_dq, self.sys.q_dot(t)[1:4]) # 3 x N
+        return ddt_dy5_dq
     
     # Loss function
-    def J_theta(self):
-        return
+    def J_theta(self, t):
+        return 1/2 * torch.pow(torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.d_dt_forward(t)) - 
+                               torch.matmul(self.sys.d_dt_dL_dqdot(t), self.gen.generator(t).matmul(self.y5.T)) - 
+                               torch.matmul(self.sys.dL_dqdot(t), self.gen.d_dt_generator(t).matmul(self.y5.T)) -
+                               torch.matmul(self.sys.dL_dqdot(t), self.gen.generator(t).matmul(self.d_dt_forward(t))), 2)
 
     # Backward propagation
-    def backward(self, X, l, y4):
-        # Derivative of binary cross entropy cost w.r.t. final output y4
-        self.dC_dy4 = y4 - l
+    def backward(self, t):
+        J = self.J_theta(t)
+        J.backward()
 
-        '''
-        Gradients for w2: partial derivative of cost w.r.t. w2
-        dC/dw2
-        '''
-        self.dy4_dy3 = self.sigmoid_first_derivative(y4)
-        self.dy3_dw2 = self.y2
+        dJ_dw1 = self.w1.grad
+        dJ_dw2 = self.w2.grad
+        dJ_dw3 = self.w3.grad
 
-        # Y4 delta: dC_dy4 dy4_dy3
-        self.y4_delta = self.dC_dy4 * self.dy4_dy3
+        # Gradient descent on the weights from our 3 linear layers
+        self.w1 -= self.learning_rate * dJ_dw1
+        self.w2 -= self.learning_rate * dJ_dw2
+        self.w3 -= self.learning_rate * dJ_dw3
 
-        # This is our gradients for w1: dC_dy4 dy4_dy3 dy3_dw2
-        self.dC_dw2 = torch.matmul(torch.t(self.dy3_dw2), self.y4_delta)
-
-        '''
-        Gradients for w1: partial derivative of cost w.r.t w1
-        dC/dw1
-        '''
-        self.dy3_dy2 = self.w2
-        self.dy2_dy1 = self.sigmoid_first_order_derivative(self.y2)
-
-        # Y2 delta: (dC_dy4 dy4_dy3) dy3_dy2 dy2_dy1
-        self.y2_delta = torch.matmul(self.y4_delta, torch.t(self.dy3_dy2)) * self.dy2_dy1
-
-        # Gradients for w1: (dC_dy4 dy4_dy3) dy3_dy2 dy2_dy1 dy1_dw1
-        self.dC_dw1 = torch.matmul(torch.t(X), self.y2_delta)
-
-        # Gradient descent on the weights from our 2 linear layers
-        self.w1 -= self.learning_rate * self.dC_dw1
-        self.w2 -= self.learning_rate * self.dC_dw2
-
-    def train(self, X, l):
+    def train(self, X, t):
         # Forward propagation
-        y4 = self.forward(X)
+        y5 = self.forward(X)
 
         # Backward propagation and gradient descent
-        self.backward(X, l, y4)
+        self.backward(t)
