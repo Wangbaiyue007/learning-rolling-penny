@@ -38,9 +38,9 @@ class FNN(nn.Module):
         return s * (1 - s)
 
     # Forward propagation
-    def forward(self, X):
+    def forward(self, X:torch.Tensor):
         # First linear layer
-        self.y1 = torch.matmul(X, self.w1)
+        self.y1 = torch.matmul(X.T, self.w1)
 
         # First non-linearity
         self.y2 = self.sigmoid(self.y1)
@@ -68,11 +68,12 @@ class FNN(nn.Module):
         return ddt_dy5_dq
     
     # Loss function
-    def J_theta(self, t):
-        return 1/2 * torch.pow(torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.d_dt_forward(t)) - 
-                               torch.matmul(self.sys.d_dt_dL_dqdot(t), self.gen.generator(t).matmul(self.y5.T)) - 
-                               torch.matmul(self.sys.dL_dqdot(t), self.gen.d_dt_generator(t).matmul(self.y5.T)) -
-                               torch.matmul(self.sys.dL_dqdot(t), self.gen.generator(t).matmul(self.d_dt_forward(t))), 2)
+    def J_theta(self, t: torch.Tensor) -> torch.Tensor:
+        size = t.size(dim=1)
+        return 1/2 * torch.pow(torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.d_dt_forward(t)).diag(0) - 
+                               torch.matmul(self.sys.d_dt_dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y5.reshape(size,3,1)).reshape(size,3).T).diag(0) - 
+                               torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.d_dt_generator(t).matmul(self.y5.reshape(size,3,1)).reshape(size,3).T).diag(0) -
+                               torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.d_dt_forward(t).T.reshape(size,3,1)).reshape(size,3).T).diag(0), 2).norm()
 
     # Backward propagation
     def backward(self, t):
@@ -84,9 +85,10 @@ class FNN(nn.Module):
         dJ_dw3 = self.w3.grad
 
         # Gradient descent on the weights from our 3 linear layers
-        self.w1 -= self.learning_rate * dJ_dw1
-        self.w2 -= self.learning_rate * dJ_dw2
-        self.w3 -= self.learning_rate * dJ_dw3
+        with torch.no_grad():
+            self.w1 -= self.learning_rate * dJ_dw1
+            self.w2 -= self.learning_rate * dJ_dw2
+            self.w3 -= self.learning_rate * dJ_dw3
 
     def train(self, X, t):
         # Forward propagation

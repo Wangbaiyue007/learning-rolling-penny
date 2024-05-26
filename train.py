@@ -8,8 +8,7 @@ nn.to(device)
 
 t = torch.arange(0, 10, 0.01)
 t = t.view(1, t.size(dim=0))
-q = nn.sys.q(t)
-breakpoint()
+q = nn.sys.q(t)[1:4]
 
 for epoch in range(num_epochs):
     # predictions
