@@ -3,7 +3,7 @@ from model import FNN
 # import torch.optim as optim
 
 nn = FNN()
-num_epochs = 101
+num_epochs = 33
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 # optimizer = optim.SGD(nn.parameters(), lr=0.001, momentum=0.9)
@@ -24,3 +24,8 @@ for epoch in range(num_epochs):
         print('Epoch {} | Loss: {}'.format(epoch, J))
         # breakpoint()
     
+print('Xi(1, 0, 0) = {}'.format(nn.forward(torch.tensor([1.,0.,0.]).reshape(3,1))))
+print('Xi(0, 1, 0) = {}'.format(nn.forward(torch.tensor([0.,1.,0.]).reshape(3,1))))
+print('Xi(0, 0, 1) = {}'.format(nn.forward(torch.tensor([0.,0.,1.]).reshape(3,1))))
+
+breakpoint()

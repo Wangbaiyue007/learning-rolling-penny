@@ -12,22 +12,22 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 1e-5
-        self.learning_rate_2 = 1e-5
-        self.learning_rate_3 = 1e-5
+        self.learning_rate_1 = 1e-8
+        self.learning_rate_2 = 1e-8
+        self.learning_rate_3 = 1e-8
 
         # Our parameters (weights)
         # w1: 3 x 100
-        self.w1 = torch.ones(self.input_dim, self.hidden_dim, requires_grad=True)
-        # self.w1 = self.w1*0.1
+        self.w1 = torch.FloatTensor(self.input_dim, self.hidden_dim).uniform_(-1, 1) / self.hidden_dim
+        self.w1.requires_grad_()
 
         # w2: 100 x 100
-        self.w2 = torch.ones(self.hidden_dim, self.hidden_dim, requires_grad=True)
-        # self.w2 = self.w2*0.1
+        self.w2 = torch.FloatTensor(self.hidden_dim, self.hidden_dim).uniform_(-1, 1) / self.hidden_dim
+        self.w2.requires_grad_()
 
         # w3: 100 x 3
-        self.w3 = torch.ones(self.hidden_dim, self.output_dim, requires_grad=True)
-        # self.w3 = self.w3*0.1
+        self.w3 = torch.FloatTensor(self.hidden_dim, self.output_dim).uniform_(-1, 1) / self.output_dim
+        self.w3.requires_grad_()
 
         # create infenitisimal generator
         self.gen = InfGenerator()
@@ -75,7 +75,7 @@ class FNN(nn.Module):
         dy4_dy1 = torch.matmul(dy4_dy2.T, dy2_dy1) # 100 x 100
         dy5_dy1 = torch.matmul(dy5_dy4.T, dy4_dy1) # 3 x 100
         dy5_dq = torch.matmul(dy5_dy1, self.w1.T) # 3 x 3
-        ddt_dy5_dq = torch.matmul(dy5_dq, self.sys.q_dot(t)[1:4]) # 3 x N
+        ddt_dy5_dq = torch.matmul(dy5_dq.T, self.sys.q_dot(t)[1:4]) # 3 x N
         return ddt_dy5_dq
     
     # Loss function
