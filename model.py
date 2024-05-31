@@ -12,9 +12,9 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 1e-6
-        self.learning_rate_2 = 1e-6
-        self.learning_rate_3 = 1e-6
+        self.learning_rate_1 = 5e-6
+        self.learning_rate_2 = 5e-6
+        self.learning_rate_3 = 5e-6
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -66,7 +66,10 @@ class FNN(nn.Module):
 
         # Third linear layer
         self.y5 = torch.matmul(self.y4, self.w3)
-        return self.y5.T
+
+        # Third nonlinearity
+        self.y6 = self.sigmoid(self.y5)
+        return self.y6.T
     
     # Time derivative of forward function
     def d_dt_forward(self, t):
@@ -83,9 +86,9 @@ class FNN(nn.Module):
     # Time derivative of forward function autograd
     def d_dt_forward_auto(self, t) -> torch.Tensor:
         jac = torch.autograd.functional.jacobian(self.forward, self.q)
-        dy5_dq = jac.sum(dim=0).sum(dim=0)
-        ddt_dy5_dq = dy5_dq * self.sys.q_dot(t)[1:4] # 3 x N
-        return ddt_dy5_dq
+        dy6_dq = jac.sum(dim=0).sum(dim=0)
+        ddt_dy6_dq = dy6_dq * self.sys.q_dot(t)[1:4] # 3 x N
+        return ddt_dy6_dq
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -97,9 +100,7 @@ class FNN(nn.Module):
 
         # nonholonomic momentum cost
         J1 =  (torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0) - 
-            torch.matmul(self.sys.d_dt_dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y5.reshape(N,3,1)).reshape(N,3).T).diag(0) - 
-            torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.d_dt_generator(t).matmul(self.y5.reshape(N,3,1)).reshape(N,3).T).diag(0) -
-            torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(d_dt_forward.T.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm()
+            torch.matmul(self.sys.d_dt_dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y6.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm() # - torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.d_dt_generator(t).matmul(self.y5.reshape(N,3,1)).reshape(N,3).T).diag(0) - torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(d_dt_forward.T.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm()
         
         # regularization
         # J2 = self.y5.norm()
@@ -132,9 +133,9 @@ class FNN(nn.Module):
 
     def train(self, X, t):
         # Forward propagation
-        y5 = self.forward(X)
+        xi = self.forward(X)
 
         # Backward propagation and gradient descent
         J = self.backward(t)
 
-        return y5, J
+        return xi, J
