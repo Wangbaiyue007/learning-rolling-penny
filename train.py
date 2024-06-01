@@ -8,7 +8,7 @@ def normalize(x:torch.Tensor):
 
 # Network
 nn = FNN()
-num_epochs = 101
+num_epochs = 401
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
@@ -49,8 +49,6 @@ for epoch in range(num_epochs):
     
     J_ = J
 
-    # if nn.q.grad is not None: nn.q.grad.zero_()
-    # if t.grad is not None: t.grad.zero_()
 
 xi_Q = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)[1:4]).T.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 

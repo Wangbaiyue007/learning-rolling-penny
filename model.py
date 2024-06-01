@@ -12,9 +12,9 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 5e-6
-        self.learning_rate_2 = 5e-6
-        self.learning_rate_3 = 5e-6
+        self.learning_rate_1 = 1e-5
+        self.learning_rate_2 = 1e-5
+        self.learning_rate_3 = 1e-5
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -88,9 +88,11 @@ class FNN(nn.Module):
         # jac = torch.autograd.functional.jacobian(self.forward, self.q, create_graph=True)
         # dy6_dq = jac.sum(dim=0).sum(dim=0)
         # ddt_dy6_dq = dy6_dq * self.sys.q_dot(t)[1:4] # 3 x N
-        self.y6.T.backward(self.sys.q_dot(t)[1:4], retain_graph=True, create_graph=True)
-        ddt_dy6_dq = self.q.grad
-        return ddt_dy6_dq
+        # breakpoint()
+        # self.y6.T.backward(self.sys.q_dot(t)[1:4], retain_graph=True, create_graph=True)
+        # ddt_dy6_dq = self.q.grad
+        ddt_dy6_dq = torch.autograd.grad(self.y6.T, self.q, self.sys.q_dot(t)[1:4], retain_graph=True, create_graph=True)
+        return ddt_dy6_dq[0]
     
     # Momentum map
     def J_xi(self, t:torch.Tensor) -> torch.Tensor:
@@ -100,10 +102,8 @@ class FNN(nn.Module):
     # Time derivative of momentum map
     def d_dt_J_xi(self, t:torch.Tensor) -> torch.Tensor:
         J_xi = self.J_xi(t)
-        J_xi.backward(torch.ones_like(J_xi), retain_graph=True, create_graph=True)
-        d_dt_J_xi = t.grad
-        # jac = torch.autograd.functional.jacobian(self.J_xi, t, create_graph=True)
-        return d_dt_J_xi
+        d_dt_J_xi = torch.autograd.grad(J_xi, t, torch.ones_like(J_xi), retain_graph=True, create_graph=True)
+        return d_dt_J_xi[0]
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -127,13 +127,13 @@ class FNN(nn.Module):
 
     # Backward propagation
     def backward(self, t:torch.Tensor, xi:torch.Tensor) -> torch.Tensor:
-
+        
         J1 = self.J_theta(t)
-        J1.backward(retain_graph=True)
+        dJ_dw = torch.autograd.grad(J1, (self.w1, self.w2, self.w3))
 
-        dJ1_dw1 = self.w1.grad
-        dJ1_dw2 = self.w2.grad
-        dJ1_dw3 = self.w3.grad
+        dJ1_dw1 = dJ_dw[0]
+        dJ1_dw2 = dJ_dw[1]
+        dJ1_dw3 = dJ_dw[2]
 
         # breakpoint()
         # Gradient descent on the weights from our 3 linear layers
@@ -145,6 +145,10 @@ class FNN(nn.Module):
         self.dJ_dw1_m = dJ1_dw1
         self.dJ_dw2_m = dJ1_dw2
         self.dJ_dw3_m = dJ1_dw3
+
+        # self.w1.grad = None
+        # self.w2.grad = None
+        # self.w3.grad = None
 
         return J1
 
