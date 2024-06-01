@@ -17,15 +17,17 @@ nn.to(device)
 t = torch.arange(0, 20, 0.01)
 N = t.size(dim=0)
 t = t.view(1, N)
+t.requires_grad_()
 q = nn.sys.q(t)[1:4]
 q.requires_grad_()
+q.retain_grad() # retain grad for non-leaf elements
 
 J_ = 999.
 
 for epoch in range(num_epochs):
 
     # predictions
-    xi = nn.forward(q)
+    # xi = nn.forward(q)
 
     # train
     xi, J = nn.train(q, t)
@@ -34,8 +36,8 @@ for epoch in range(num_epochs):
     if epoch % 1 == 0:
         print('Epoch {} | Loss: {}'.format(epoch, J))
 
-        t = torch.cat([t[10:], t[:10]], dim=0)
-        q = torch.cat([q[:,10:], q[:,:10]], dim=1)
+        # t = torch.cat([t[10:], t[:10]], dim=0)
+        # q = torch.cat([q[:,10:], q[:,:10]], dim=1)
 
         # randomize initial conditions
         # nn.sys.phi_0 = torch.randn(1)
@@ -46,6 +48,9 @@ for epoch in range(num_epochs):
         # breakpoint()
     
     J_ = J
+
+    # if nn.q.grad is not None: nn.q.grad.zero_()
+    # if t.grad is not None: t.grad.zero_()
 
 xi_Q = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)[1:4]).T.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 

@@ -68,7 +68,7 @@ class FNN(nn.Module):
         self.y5 = torch.matmul(self.y4, self.w3)
 
         # Third nonlinearity
-        self.y6 = self.sigmoid(self.y5)
+        self.y6 = self.sigmoid(self.y5) # N x 3
         return self.y6.T
     
     # Time derivative of forward function
@@ -84,11 +84,26 @@ class FNN(nn.Module):
         return ddt_dy5_dq
     
     # Time derivative of forward function autograd
-    def d_dt_forward_auto(self, t) -> torch.Tensor:
-        jac = torch.autograd.functional.jacobian(self.forward, self.q)
-        dy6_dq = jac.sum(dim=0).sum(dim=0)
-        ddt_dy6_dq = dy6_dq * self.sys.q_dot(t)[1:4] # 3 x N
+    def d_dt_forward_auto(self, t:torch.Tensor) -> torch.Tensor:
+        # jac = torch.autograd.functional.jacobian(self.forward, self.q, create_graph=True)
+        # dy6_dq = jac.sum(dim=0).sum(dim=0)
+        # ddt_dy6_dq = dy6_dq * self.sys.q_dot(t)[1:4] # 3 x N
+        self.y6.T.backward(self.sys.q_dot(t)[1:4], retain_graph=True, create_graph=True)
+        ddt_dy6_dq = self.q.grad
         return ddt_dy6_dq
+    
+    # Momentum map
+    def J_xi(self, t:torch.Tensor) -> torch.Tensor:
+        N = t.size(dim=1)
+        return torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y6.reshape(N,3,1)).reshape(N,3).T).diag(0) # 1 x N
+
+    # Time derivative of momentum map
+    def d_dt_J_xi(self, t:torch.Tensor) -> torch.Tensor:
+        J_xi = self.J_xi(t)
+        J_xi.backward(torch.ones_like(J_xi), retain_graph=True, create_graph=True)
+        d_dt_J_xi = t.grad
+        # jac = torch.autograd.functional.jacobian(self.J_xi, t, create_graph=True)
+        return d_dt_J_xi
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -98,9 +113,11 @@ class FNN(nn.Module):
 
         d_dt_forward = self.d_dt_forward_auto(t)
 
+        d_dt_J_xi = self.d_dt_J_xi(t)
+
         # nonholonomic momentum cost
-        J1 =  (torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0) - 
-            torch.matmul(self.sys.d_dt_dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y6.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm() # - torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.d_dt_generator(t).matmul(self.y5.reshape(N,3,1)).reshape(N,3).T).diag(0) - torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(d_dt_forward.T.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm()
+        J1 =  (torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0) - d_dt_J_xi).norm()
+            #torch.matmul(self.sys.d_dt_dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y6.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm() - torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.d_dt_generator(t).matmul(self.y5.reshape(N,3,1)).reshape(N,3).T).diag(0) - torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(d_dt_forward.T.reshape(N,3,1)).reshape(N,3).T).diag(0)).norm()
         
         # regularization
         # J2 = self.y5.norm()
@@ -109,10 +126,10 @@ class FNN(nn.Module):
         return J1 + J2
 
     # Backward propagation
-    def backward(self, t) -> torch.Tensor:
+    def backward(self, t:torch.Tensor, xi:torch.Tensor) -> torch.Tensor:
 
         J1 = self.J_theta(t)
-        J1.backward()
+        J1.backward(retain_graph=True)
 
         dJ1_dw1 = self.w1.grad
         dJ1_dw2 = self.w2.grad
@@ -128,7 +145,7 @@ class FNN(nn.Module):
         self.dJ_dw1_m = dJ1_dw1
         self.dJ_dw2_m = dJ1_dw2
         self.dJ_dw3_m = dJ1_dw3
-        
+
         return J1
 
     def train(self, X, t):
@@ -136,6 +153,6 @@ class FNN(nn.Module):
         xi = self.forward(X)
 
         # Backward propagation and gradient descent
-        J = self.backward(t)
+        J = self.backward(t, xi)
 
         return xi, J
