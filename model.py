@@ -12,9 +12,9 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 1e-5
-        self.learning_rate_2 = 1e-5
-        self.learning_rate_3 = 1e-5
+        self.learning_rate_1 = 5e-4
+        self.learning_rate_2 = 5e-4
+        self.learning_rate_3 = 5e-4
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -43,7 +43,7 @@ class FNN(nn.Module):
 
 
     def sigmoid(self, s):
-        return 2 / (1 + torch.exp(-s)) - 2
+        return 2 / (1 + torch.exp(-s)) - 1
 
     def sigmoid_first_derivative(self, s):
         return 2 * s * (1 - s)
@@ -69,7 +69,28 @@ class FNN(nn.Module):
 
         # Third nonlinearity
         self.y6 = self.sigmoid(self.y5) # N x 3
-        return self.y5.T
+        return self.y6.T
+    
+    # Forward propagation without updating
+    def forward_(self, X:torch.Tensor):
+        # First linear layer
+        y1 = torch.matmul(X.T, self.w1)
+
+        # First non-linearity
+        y2 = self.sigmoid(y1)
+
+        # Second linear layer
+        y3 = torch.matmul(y2, self.w2)
+
+        # Second non-linearity
+        y4 = self.sigmoid(y3)
+
+        # Third linear layer
+        y5 = torch.matmul(y4, self.w3)
+
+        # Third nonlinearity
+        y6 = self.sigmoid(y5) # N x 3
+        return y6.T
     
     # Time derivative of forward function
     def d_dt_forward(self, t:torch.Tensor):
@@ -86,24 +107,26 @@ class FNN(nn.Module):
     
     # Time derivative of forward function autograd
     def d_dt_forward_auto(self, t:torch.Tensor) -> torch.Tensor:
-        # jac = torch.autograd.functional.jacobian(self.forward, self.q, create_graph=True)
-        # dy6_dq = jac.sum(dim=0).sum(dim=0)
-        # df_dt = dy6_dq * self.sys.q_dot(t)[1:4] # 3 x N
+        jac = torch.autograd.functional.jacobian(self.forward_, self.q[:,0], create_graph=True)
+        df_dt = jac @ self.sys.q_dot(t) # 3 x N
+        return df_dt
         # breakpoint()
         # self.y6.T.backward(self.sys.q_dot(t)[1:4], retain_graph=True, create_graph=True)
         # ddt_dy6_dq = self.q.grad
-        df_dt = torch.autograd.grad(self.y5.T, t, torch.ones_like(self.y5.T), retain_graph=True, create_graph=True)
-        return df_dt[0].reshape(4, t.size(dim=2))
+        # df_dt = torch.autograd.grad(self.y5.T, t, torch.ones_like(self.y5.T), retain_graph=True, create_graph=True)
+        # return df_dt[0].reshape(4, t.size(dim=2))
     
     # Momentum map
     def J_xi(self, t:torch.Tensor) -> torch.Tensor:
         N = t.size(dim=2)
-        return torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y5.reshape(N,3,1)).reshape(N,3).T).diag(0) # 1 x N
+        return torch.matmul(self.sys.dL_dqdot(t)[1:4].T, self.gen.generator(t).matmul(self.y6.reshape(N,3,1)).reshape(N,3).T).diag(0) # 1 x N
 
     # Time derivative of momentum map
     def d_dt_J_xi(self, t:torch.Tensor) -> torch.Tensor:
         J_xi = self.J_xi(t)
         d_dt_J_xi = torch.autograd.grad(J_xi, t, torch.ones_like(J_xi), retain_graph=True, create_graph=True)
+        # d_dt_J_xi = torch.autograd.functional.jacobian(self.J_xi, t, create_graph=True)
+        # breakpoint()
         return d_dt_J_xi[0]
     
     # Loss function
@@ -112,15 +135,16 @@ class FNN(nn.Module):
         # data size
         N = t.size(dim=1)
 
-        d_dt_forward = self.d_dt_forward_auto(t)[1:4] # 3 x N
+        d_dt_forward = self.d_dt_forward_auto(t) # 3 x N
 
         d_dt_J_xi = self.d_dt_J_xi(t)
 
         # nonholonomic momentum cost
         J1 =  (torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0) - d_dt_J_xi).norm()
+        # J1 = 0
         
         # regularization
-        # J2 = - self.y5[:,0].norm()
+        # J2 = - 5 * self.y6.norm()
         J2 = 0
 
         return J1 + J2
@@ -145,10 +169,6 @@ class FNN(nn.Module):
         self.dJ_dw1_m = dJ1_dw1
         self.dJ_dw2_m = dJ1_dw2
         self.dJ_dw3_m = dJ1_dw3
-
-        # self.w1.grad = None
-        # self.w2.grad = None
-        # self.w3.grad = None
 
         return J1
 

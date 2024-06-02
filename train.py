@@ -14,7 +14,7 @@ nn.to(device)
 
 # randomize time
 # t = torch.FloatTensor(1, 1000).uniform_(0, 10)
-t = torch.arange(0., 20., 0.01)
+t = torch.arange(0., 20., 0.02)
 N = t.size(dim=0)
 t = t.view(1, N)
 t = t.repeat(4,1,1)
@@ -23,8 +23,12 @@ q = nn.sys.q(t)
 q.requires_grad_()
 q.retain_grad() # retain grad for non-leaf elements
 
-J_ = 999.
+# vector field before training
+xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)).T.reshape(N,3,1))
+xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
 
+
+# training
 for epoch in range(num_epochs):
 
     # predictions
@@ -44,13 +48,9 @@ for epoch in range(num_epochs):
         # nn.sys.phi_0 = torch.randn(1)
         # nn.sys.x_0 = torch.randn(1)
         # nn.sys.y_0 = torch.randn(1)
-
-        # if J > J_: break
-        # breakpoint()
     
-    J_ = J
 
-
+# vector field after training
 xi_Q = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)).T.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
@@ -59,11 +59,20 @@ print('xi(1, 0, 0) = {}'.format(normalize(nn.forward(torch.tensor([0.,1.,0.,0.])
 print('xi(0, 1, 0) = {}'.format(normalize(nn.forward(torch.tensor([0.,0.,1.,0.]).T))))
 print('xi(0, 0, 1) = {}'.format(normalize(nn.forward(torch.tensor([0.,0.,0.,1.]).T))))
 
-ax = plt.figure().add_subplot(projection='3d')
+plt.rcParams['text.usetex'] = True
+fig = plt.figure(figsize=plt.figaspect(0.5))
+
+ax = fig.add_subplot(1, 2, 1, projection='3d')
+ax.plot(xi_Q_0_np[:,1].reshape(N), xi_Q_0_np[:,2].reshape(N), xi_Q_0_np[:,0].reshape(N))
+ax.set_xlabel(r'$\frac{\partial}{\partial x}$', fontsize=20)
+ax.set_ylabel(r'$\frac{\partial}{\partial y}$', fontsize=20)
+ax.set_zlabel(r'$\frac{\partial}{\partial\phi}$', fontsize=20)
+
+ax = fig.add_subplot(1, 2, 2, projection='3d')
 ax.plot(xi_Q_np[:,1].reshape(N), xi_Q_np[:,2].reshape(N), xi_Q_np[:,0].reshape(N))
-ax.set_xlabel("x")
-ax.set_ylabel("y")
-ax.set_zlabel("phi")
+ax.set_xlabel(r'$\frac{\partial}{\partial x}$', fontsize=20)
+ax.set_ylabel(r'$\frac{\partial}{\partial y}$', fontsize=20)
+ax.set_zlabel(r'$\frac{\partial}{\partial\phi}$', fontsize=20)
 plt.show()
 
 breakpoint()
