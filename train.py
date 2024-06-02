@@ -4,11 +4,11 @@ import matplotlib.pyplot as plt
 # import torch.optim as optim
 
 def normalize(x:torch.Tensor):
-    return x/x.sum(0).expand_as(x).abs()
+    return x/x.norm()
 
 # Network
 nn = FNN(input_dim=4)
-num_epochs = 401
+num_epochs = 1000
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
