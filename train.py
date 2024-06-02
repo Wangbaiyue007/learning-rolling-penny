@@ -1,10 +1,6 @@
 import torch
 from model import FNN
 import matplotlib.pyplot as plt
-# import torch.optim as optim
-
-def normalize(x:torch.Tensor):
-    return x/x.norm()
 
 # Network
 nn = FNN(input_dim=4)
@@ -55,9 +51,9 @@ xi_Q = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)).T.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
 print('xi_Q = {}'.format(xi_Q))
-print('xi(1, 0, 0) = {}'.format(normalize(nn.forward(torch.tensor([0.,1.,0.,0.]).T))))
-print('xi(0, 1, 0) = {}'.format(normalize(nn.forward(torch.tensor([0.,0.,1.,0.]).T))))
-print('xi(0, 0, 1) = {}'.format(normalize(nn.forward(torch.tensor([0.,0.,0.,1.]).T))))
+print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
+print('xi(1, 0, 0) = {}'.format(nn.forward_(torch.tensor([0.,1.,0.,0.]).T)))
+print('xi(0, 0, 1) = {}'.format(nn.forward_(torch.tensor([0.,0.,0.,1.]).T)))
 
 plt.rcParams['text.usetex'] = True
 fig = plt.figure(figsize=plt.figaspect(0.5))

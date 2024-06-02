@@ -12,9 +12,9 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 5e-4
-        self.learning_rate_2 = 5e-4
-        self.learning_rate_3 = 5e-4
+        self.learning_rate_1 = 5e-3
+        self.learning_rate_2 = 5e-3
+        self.learning_rate_3 = 5e-3
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -43,10 +43,16 @@ class FNN(nn.Module):
 
 
     def sigmoid(self, s):
-        return 2 / (1 + torch.exp(-s)) - 1
+        return 1 / (1 + torch.exp(-s)) - 0
 
     def sigmoid_first_derivative(self, s):
-        return 2 * s * (1 - s)
+        return 1 * s * (1 - s)
+    
+    def normalize(self, x:torch.Tensor):
+        return x / x.norm(dim=1).reshape(x.size(dim=0), 1)
+    
+    def normalize_(self, x:torch.Tensor):
+        return x / x.norm()
 
     # Forward propagation
     def forward(self, X:torch.Tensor):
@@ -68,7 +74,7 @@ class FNN(nn.Module):
         self.y5 = torch.matmul(self.y4, self.w3)
 
         # Third nonlinearity
-        self.y6 = self.sigmoid(self.y5) # N x 3
+        self.y6 = self.normalize(self.sigmoid(self.y5)) # N x 3
         return self.y6.T
     
     # Forward propagation without updating
@@ -89,7 +95,7 @@ class FNN(nn.Module):
         y5 = torch.matmul(y4, self.w3)
 
         # Third nonlinearity
-        y6 = self.sigmoid(y5) # N x 3
+        y6 = self.normalize_(self.sigmoid(y5)) # N x 3
         return y6.T
     
     # Time derivative of forward function
@@ -144,7 +150,7 @@ class FNN(nn.Module):
         # J1 = 0
         
         # regularization
-        # J2 = - 5 * self.y6.norm()
+        # J2 = - 1 * self.y6.norm()
         J2 = 0
 
         return J1 + J2
