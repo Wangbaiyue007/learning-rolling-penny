@@ -69,6 +69,7 @@ ax.plot(xi_Q_np[:,1].reshape(N), xi_Q_np[:,2].reshape(N), xi_Q_np[:,0].reshape(N
 ax.set_xlabel(r'$\frac{\partial}{\partial x}$', fontsize=20)
 ax.set_ylabel(r'$\frac{\partial}{\partial y}$', fontsize=20)
 ax.set_zlabel(r'$\frac{\partial}{\partial\phi}$', fontsize=20)
+ax.set_zlim(-1.5, 1.5)
 plt.show()
 
 breakpoint()
