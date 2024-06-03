@@ -12,9 +12,9 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 5e-3
-        self.learning_rate_2 = 5e-3
-        self.learning_rate_3 = 5e-3
+        self.learning_rate_1 = 1e-2
+        self.learning_rate_2 = 1e-2
+        self.learning_rate_3 = 1e-2
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -36,7 +36,7 @@ class FNN(nn.Module):
         self.sys = self.gen.sys
 
         # Momentum in gradient
-        self.gamma = .1
+        self.gamma = .5
         self.dJ_dw1_m = torch.zeros(self.w1.size())
         self.dJ_dw2_m = torch.zeros(self.w2.size())
         self.dJ_dw3_m = torch.zeros(self.w3.size())
@@ -113,7 +113,7 @@ class FNN(nn.Module):
     
     # Time derivative of forward function autograd
     def d_dt_forward_auto(self, t:torch.Tensor) -> torch.Tensor:
-        jac = torch.autograd.functional.jacobian(self.forward_, self.q[:,0], create_graph=True)
+        jac = torch.autograd.functional.jacobian(self.forward_, torch.ones(4), create_graph=True) # 3 x 4
         df_dt = jac @ self.sys.q_dot(t) # 3 x N
         return df_dt
         # breakpoint()
@@ -132,8 +132,7 @@ class FNN(nn.Module):
         J_xi = self.J_xi(t)
         d_dt_J_xi = torch.autograd.grad(J_xi, t, torch.ones_like(J_xi), retain_graph=True, create_graph=True)
         # d_dt_J_xi = torch.autograd.functional.jacobian(self.J_xi, t, create_graph=True)
-        # breakpoint()
-        return d_dt_J_xi[0]
+        return d_dt_J_xi[0].sum(0)
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -150,8 +149,8 @@ class FNN(nn.Module):
         # J1 = 0
         
         # regularization
-        # J2 = - 1 * self.y6.norm()
-        J2 = 0
+        J2 = - 0.01 * self.y6[:,0].norm() - 1 * self.y6[:,1].norm() - 1 * self.y6[:,2].norm()
+        # J2 = 0
 
         return J1 + J2
 

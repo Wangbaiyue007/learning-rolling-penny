@@ -20,7 +20,7 @@ q.requires_grad_()
 q.retain_grad() # retain grad for non-leaf elements
 
 # vector field before training
-xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)).T.reshape(N,3,1))
+xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(q).T.reshape(N,3,1))
 xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
 
 
@@ -47,12 +47,12 @@ for epoch in range(num_epochs):
     
 
 # vector field after training
-xi_Q = nn.gen.generator(t).matmul(nn.forward(nn.sys.q(t)).T.reshape(N,3,1))
+xi_Q = nn.gen.generator(t).matmul(nn.forward(q).T.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
 print('xi_Q = {}'.format(xi_Q))
-print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
 print('xi(1, 0, 0) = {}'.format(nn.forward_(torch.tensor([0.,1.,0.,0.]).T)))
+print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
 print('xi(0, 0, 1) = {}'.format(nn.forward_(torch.tensor([0.,0.,0.,1.]).T)))
 
 plt.rcParams['text.usetex'] = True

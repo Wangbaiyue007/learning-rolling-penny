@@ -10,7 +10,7 @@ class InfGenerator:
     def generator(self, t:torch.Tensor) -> torch.Tensor:
         N = t.size(dim=2)
         if self.type == 'SE(2)':
-            gen = -self.sys.q(t)[3].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [1, 0., 0.], [0., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
+            gen = self.sys.q(t)[3].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [-1., 0., 0.], [0., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
                     self.sys.q(t)[2].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [1., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
                     torch.tensor([[1., 0, 0], [0., 1., 0], [0., 0., 1.]]).repeat(N,1,1).reshape(N,3,3)
             return gen
@@ -19,7 +19,7 @@ class InfGenerator:
             return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]])
         
     def d_dt_generator(self, t):
-        N = t.size(dim=1)
+        N = t.size(dim=2)
         if self.type == 'SE(2)':
             gen = -self.sys.q_dot(t)[3].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [1, 0., 0.], [0., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
                     self.sys.q_dot(t)[2].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [1., 0., 0.]]).repeat(N,1,1).reshape(N,3,3)
