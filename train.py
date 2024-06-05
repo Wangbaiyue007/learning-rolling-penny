@@ -47,7 +47,9 @@ for epoch in range(num_epochs):
     
 
 # vector field after training
-xi_Q = nn.gen.generator(t).matmul(nn.forward(q).T.reshape(N,3,1))
+xi = nn.forward(q).T
+xi_np = xi.detach().cpu().numpy()
+xi_Q = nn.gen.generator(t).matmul(xi.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
 print('xi_Q = {}'.format(xi_Q))
@@ -56,15 +58,15 @@ print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
 print('xi(0, 0, 1) = {}'.format(nn.forward_(torch.tensor([0.,0.,0.,1.]).T)))
 
 plt.rcParams['text.usetex'] = True
-fig = plt.figure(figsize=plt.figaspect(0.5))
+fig = plt.figure(figsize=plt.figaspect(0.3))
 
-ax = fig.add_subplot(1, 2, 1, projection='3d')
+ax = fig.add_subplot(1, 3, 1, projection='3d')
 ax.plot(xi_Q_0_np[:,1].reshape(N), xi_Q_0_np[:,2].reshape(N), xi_Q_0_np[:,0].reshape(N))
 ax.set_xlabel(r'$\partial / \partial x$', fontsize=15)
 ax.set_ylabel(r'$\partial / \partial y$', fontsize=15)
 ax.set_zlabel(r'$\partial / \partial\phi$', fontsize=15)
 
-ax = fig.add_subplot(1, 2, 2, projection='3d')
+ax = fig.add_subplot(1, 3, 2, projection='3d')
 ax.plot(xi_Q_np[:,1].reshape(N), xi_Q_np[:,2].reshape(N), xi_Q_np[:,0].reshape(N))
 ax.set_xlabel(r'$\partial / \partial x$', fontsize=15)
 ax.set_ylabel(r'$\partial / \partial y$', fontsize=15)
@@ -72,6 +74,16 @@ ax.set_zlabel(r'$\partial / \partial\phi$', fontsize=15)
 ax.set_xlim(-1.5, 1.5)
 ax.set_ylim(-1.5, 1.5)
 ax.set_zlim(-1.5, 1.5)
+
+ax = fig.add_subplot(1, 3, 3, projection='3d')
+ax.plot(xi_np[:,1].reshape(N), xi_np[:,2].reshape(N), xi_np[:,0].reshape(N))
+ax.set_xlabel(r'$x$', fontsize=15)
+ax.set_ylabel(r'$y$', fontsize=15)
+ax.set_zlabel(r'$\phi$', fontsize=15)
+ax.set_xlim(-1.5, 1.5)
+ax.set_ylim(-1.5, 1.5)
+ax.set_zlim(-1.5, 1.5)
 plt.show()
+
 
 breakpoint()
