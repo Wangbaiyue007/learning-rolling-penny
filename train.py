@@ -17,12 +17,10 @@ t = t.repeat(4,1,1)
 t.requires_grad_()
 q = nn.sys.q(t)
 q.requires_grad_()
-q.retain_grad() # retain grad for non-leaf elements
 
 # vector field before training
 xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(q).T.reshape(N,3,1))
 xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
-
 
 # training
 for epoch in range(num_epochs):
