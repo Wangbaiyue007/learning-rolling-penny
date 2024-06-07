@@ -4,12 +4,11 @@ import matplotlib.pyplot as plt
 
 # Network
 nn = FNN(input_dim=4)
-num_epochs = 1000
+num_epochs = 10000
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
 # randomize time
-# t = torch.FloatTensor(1, 1000).uniform_(0, 10)
 t = torch.arange(0., 20., 0.02)
 N = t.size(dim=0)
 t = t.view(1, N)
@@ -32,7 +31,7 @@ for epoch in range(num_epochs):
     xi, J = nn.train(q, t)
 
     # print our mean cross entropy loss
-    if epoch % 5 == 0:
+    if epoch % 100 == 0:
         print('Epoch {} | Loss: {}'.format(epoch, J))
 
         # t = torch.cat([t[10:], t[:10]], dim=0)

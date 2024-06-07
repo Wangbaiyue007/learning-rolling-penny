@@ -3,7 +3,7 @@ from torch import nn
 from motion import InfGenerator
 
 class FNN(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=50, output_dim=3):
+    def __init__(self, input_dim=3, hidden_dim=10, output_dim=3):
         super().__init__()
 
         # Dimensions for input, hidden and output
@@ -12,9 +12,7 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate_1 = 1e-3
-        self.learning_rate_2 = 1e-3
-        self.learning_rate_3 = 1e-3
+        self.learning_rate = 1e-4
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -36,7 +34,7 @@ class FNN(nn.Module):
         self.sys = self.gen.sys
 
         # Momentum in gradient
-        self.gamma = 0.1
+        self.gamma = 0.5
         self.dJ_dw1_m = torch.zeros(self.w1.size())
         self.dJ_dw2_m = torch.zeros(self.w2.size())
         self.dJ_dw3_m = torch.zeros(self.w3.size())
@@ -112,29 +110,35 @@ class FNN(nn.Module):
         df_dq = torch.autograd.grad(self.y6.T, self.q, torch.ones_like(self.y6.T), retain_graph=True, create_graph=True) # 3 x N
         df_dt = df_dq[0] * self.sys.q_dot(t) # 3 x N
         return df_dt[1:4]
-        # df_dt = torch.autograd.grad(self.y6.T, t, torch.ones_like(self.y6.T), retain_graph=True)
+        # df_dt = torch.autograd.grad(self.y6.T, t, torch.ones_like(self.y6.T), retain_graph=True, create_graph=True)
         # return df_dt[0].reshape(4, t.size(dim=2))[1:4]
     
     # Vector field of Lie algebra
     def xi_Q(self, t:torch.Tensor) -> torch.Tensor:
         N = t.size(dim=2)
-        return (self.gen.generator(t) @ self.y6.reshape(N,3,1)).reshape(N,3)
+        return (self.gen.generator(t) @ self.y6.T.reshape(N,3,1)).reshape(N,3)
     
     # Momentum map
-    def J_xi(self, t:torch.Tensor) -> torch.Tensor:
-        return (self.sys.dL_dqdot(t)[1:4] * self.xi_Q(t).T).sum(0) # 1 x N
+    # def J_xi(self, t:torch.Tensor) -> torch.Tensor:
+    #     return (self.sys.dL_dqdot(t)[1:4] * self.xi_Q(t).T).sum(0) # 1 x N
 
     # Time derivative of momentum map
-    def d_dt_J_xi(self, t:torch.Tensor) -> torch.Tensor:
-        J_xi = self.J_xi(t)
-        d_dt_J_xi = torch.autograd.grad(J_xi, t, torch.ones_like(J_xi), retain_graph=True, create_graph=True)
-        # d_dt_J_xi = torch.autograd.functional.jacobian(self.J_xi, t, create_graph=True)
-        return d_dt_J_xi[0][1:4]
+    # def d_dt_J_xi(self, t:torch.Tensor) -> torch.Tensor:
+    #     J_xi = self.J_xi(t)
+    #     d_dt_J_xi = torch.autograd.grad(J_xi, t, torch.ones_like(J_xi), retain_graph=True, create_graph=True)
+    #     # d_dt_J_xi = torch.autograd.functional.jacobian(self.J_xi, t, create_graph=True)
+    #     return d_dt_J_xi[0][1:4]
+    
+    def d_dt_J_xi_chain(self, t:torch.Tensor) -> torch.Tensor:
+        ddt_dL_dqdot = torch.autograd.grad(self.sys.dL_dqdot(t)[1:4], t, torch.ones_like(self.sys.dL_dqdot(t)[1:4]), retain_graph=True, create_graph=True)
+        ddq_xi_Q = torch.autograd.grad(self.xi_Q(t), self.q, torch.ones_like(self.xi_Q(t)), retain_graph=True, create_graph=True)
+        ddt_xi_Q = ddq_xi_Q[0][1:4] * self.sys.q_dot(t)[1:4]
+        return ddt_dL_dqdot[0][1:4] * self.xi_Q(t).T + self.sys.dL_dqdot(t)[1:4] * ddt_xi_Q
     
     # Nonholonomic momentum cost
     def J_nhc(self, t: torch.Tensor) -> torch.Tensor:
         d_dt_xi = self.d_dt_xi(t) # 3 x N
-        d_dt_J_xi = self.d_dt_J_xi(t)
+        d_dt_J_xi = self.d_dt_J_xi_chain(t)
         return 1 * ((self.sys.dL_dqdot(t)[1:4] * d_dt_xi).sum(0) - d_dt_J_xi.sum(0)).norm()
     
     # Loss function
@@ -144,18 +148,18 @@ class FNN(nn.Module):
         N = t.size(dim=2)
 
         # nonholonomic momentum cost
-        # J1 = 0.1 * self.J_nhc(t)
-        J1 = 0
+        J1 = self.J_nhc(t)
+        # J1 = 0
         
         # regularization
         # J2 =  (torch.ones_like(self.y6).norm() - self.y6.norm()).norm()
         # J2 = torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0).norm()
         # J2 = - 0.1 * self.xi_Q(t).norm()
         # J2 = - self.d_dt_xi(t).norm()
-        # J2 = 0
+        J2 = 0
 
         # ground truth
-        J2 = (torch.tensor([[.5], [0.], [0.]]).repeat(1,N) + self.sys.q(t)[3] * torch.tensor([[0.], [.5], [0.]]) - self.sys.q(t)[2] * torch.tensor([[0.], [0.], [.5]]) - self.y6.T).norm()
+        # J2 = (torch.tensor([[1.], [0.], [0.]]).repeat(1,N) + self.sys.y(t[2]) * torch.tensor([[0.], [1.], [0.]]) - self.sys.x(t[3]) * torch.tensor([[0.], [0.], [1.]]) - self.y6.T).norm()
 
         J = J1 + J2
 
@@ -174,9 +178,9 @@ class FNN(nn.Module):
         # breakpoint()
         # Gradient descent on the weights from our 3 linear layers
         with torch.no_grad():
-            self.w1 -= self.learning_rate_1 * (dJ1_dw1 + self.gamma * self.dJ_dw1_m)
-            self.w2 -= self.learning_rate_2 * (dJ1_dw2 + self.gamma * self.dJ_dw2_m)
-            self.w3 -= self.learning_rate_3 * (dJ1_dw3 + self.gamma * self.dJ_dw3_m)
+            self.w1 -= self.learning_rate * (dJ1_dw1 + self.gamma * self.dJ_dw1_m)
+            self.w2 -= self.learning_rate * (dJ1_dw2 + self.gamma * self.dJ_dw2_m)
+            self.w3 -= self.learning_rate * (dJ1_dw3 + self.gamma * self.dJ_dw3_m)
 
         self.dJ_dw1_m = dJ1_dw1
         self.dJ_dw2_m = dJ1_dw2
