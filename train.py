@@ -4,12 +4,12 @@ import matplotlib.pyplot as plt
 
 # Network
 nn = FNN(input_dim=4)
-num_epochs = 10000
+num_epochs = 1000
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
 # randomize time
-t = torch.arange(0., 20., 0.02)
+t = torch.arange(0., 20., 0.05)
 N = t.size(dim=0)
 t = t.view(1, N)
 t = t.repeat(4,1,1)
