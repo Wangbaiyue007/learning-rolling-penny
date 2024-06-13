@@ -1,10 +1,15 @@
 import torch
 from torch import nn
+import numpy as np
 from motion import InfGenerator
+from torchdiffeq import odeint
 
 class FNN(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=50, output_dim=3):
+    def __init__(self, t: torch.Tensor, input_dim=3, hidden_dim=50, output_dim=3):
         super().__init__()
+
+        # Time series
+        self.t = t
 
         # Dimensions for input, hidden and output
         self.input_dim = input_dim
@@ -39,12 +44,6 @@ class FNN(nn.Module):
         self.dJ_dw2_m = torch.zeros(self.w2.size())
         self.dJ_dw3_m = torch.zeros(self.w3.size())
 
-
-    def sigmoid(self, s):
-        return 2 / (1 + torch.exp(-s)) - 1
-
-    def sigmoid_first_derivative(self, s):
-        return 1 * s * (1 - s)
     
     def normalize(self, x:torch.Tensor) -> torch.Tensor:
         return x / x.norm(dim=1).reshape(x.size(dim=0), 1)
@@ -52,13 +51,14 @@ class FNN(nn.Module):
     def normalize_(self, x:torch.Tensor) -> torch.Tensor:
         return x / x.norm()
 
-    # Forward propagation
-    def forward(self, X:torch.Tensor) -> torch.Tensor:
+    # Forward propagation: time derivative of Lie algebra
+    def forward(self, xi_0, t: torch.Tensor) -> torch.Tensor:
         m = nn.Tanh()
-        self.q = X
+
+        TQ = torch.cat([self.sys.q(t), self.sys.q_dot(t)], dim=0) 
 
         # First linear layer
-        self.y1 = torch.matmul(X.T, self.w1)
+        self.y1 = torch.matmul(TQ.T, self.w1)
 
         # First non-linearity
         self.y2 = m(self.y1)
@@ -80,71 +80,40 @@ class FNN(nn.Module):
         # self.y6 = self.y5
         return self.y6.T
     
-    # Forward propagation without updating
-    def forward_(self, X:torch.Tensor):
-        m = nn.Tanh()
-
-        # First linear layer
-        y1 = torch.matmul(X.T, self.w1)
-
-        # First non-linearity
-        y2 = m(y1)
-
-        # Second linear layer
-        y3 = torch.matmul(y2, self.w2)
-
-        # Second non-linearity
-        y4 = m(y3)
-
-        # Third linear layer
-        y5 = torch.matmul(y4, self.w3)
-
-        # Third nonlinearity
-        y6 = self.normalize_(y5) # N x 3
-        # y6 = m(y5)
-        # y6 = y5
-        return y6.T
-
-    # Time derivative of Lie algebra element xi
-    def d_dt_xi(self, t:torch.Tensor) -> torch.Tensor:
-        df_dq = torch.autograd.grad(self.y6.T, self.q, torch.ones_like(self.y6.T), retain_graph=True, create_graph=True) # 3 x N
-        df_dt = df_dq[0] * self.sys.q_dot(t) # 3 x N
-        return df_dt[1:4]
-        # df_dt = torch.autograd.grad(self.y6.T, t, torch.ones_like(self.y6.T), retain_graph=True, create_graph=True)
-        # return df_dt[0].reshape(4, t.size(dim=2))[1:4]
+    # Lie algebra element xi
+    def xi(self, t: torch.Tensor) -> torch.Tensor:
+        xi_0 = self.y6[0]
+        breakpoint()
+        self._xi = odeint(self.forward, xi_0, t, method='dopri5') # numerical integration of NN
+        return self._xi
     
     # Vector field of Lie algebra
     def xi_Q(self, t:torch.Tensor) -> torch.Tensor:
-        N = t.size(dim=2)
-        return (self.gen.generator(t) @ self.y6.T.reshape(N,3,1)).reshape(N,3)
+        N = t.size(dim=0)
+        return (self.gen.generator(t) @ self.xi(t).T.reshape(N,3,1)).reshape(N,3)
+    
+    def d_dt_xi_Q(self, t: torch.Tensor) -> torch.Tensor:
+        N = t.size(dim=0)
+        return (self.gen.generator(t) @ self.y6.T.reshape(N,3,1)).reshape(N,3).T + (self.gen.d_dt_generator(t) @ self.xi(t).reshape(N,3,1)).reshape(N,3).T
     
     # Momentum map
     def J_xi(self, t:torch.Tensor) -> torch.Tensor:
         return (self.sys.dL_dqdot(t)[1:4] * self.xi_Q(t).T).sum(0) # 1 x N
-
-    # Time derivative of momentum map
-    def d_dt_J_xi(self, t:torch.Tensor) -> torch.Tensor:
-        J_xi = self.J_xi(t)
-        d_dt_J_xi = torch.autograd.grad(J_xi, t, torch.ones_like(J_xi), retain_graph=True, create_graph=True)
-        return d_dt_J_xi[0][1:4]
     
+    # Time derivative of momentum map using the chain rule
     def d_dt_J_xi_chain(self, t:torch.Tensor) -> torch.Tensor:
-        ddt_dL_dqdot = torch.autograd.grad(self.sys.dL_dqdot(t)[1:4], t, torch.ones_like(self.sys.dL_dqdot(t)[1:4]), retain_graph=True, create_graph=True)
-        ddq_xi_Q = torch.autograd.grad(self.xi_Q(t), self.q, torch.ones_like(self.xi_Q(t)), retain_graph=True, create_graph=True)
-        ddt_xi_Q = ddq_xi_Q[0][1:4] * self.sys.q_dot(t)[1:4]
-        return ddt_dL_dqdot[0][1:4] * self.xi_Q(t).T + self.sys.dL_dqdot(t)[1:4] * ddt_xi_Q
+        return self.sys.d_dt_dL_dqdot(t)[0][1:4] * self.xi_Q(t).T + self.sys.dL_dqdot(t)[1:4] * self.d_dt_xi_Q(t)
     
     # Nonholonomic momentum cost
     def J_nhc(self, t: torch.Tensor) -> torch.Tensor:
-        d_dt_xi = self.d_dt_xi(t) # 3 x N
-        d_dt_J_xi = self.d_dt_J_xi(t)
-        return 1 * ((self.sys.dL_dqdot(t)[1:4] * d_dt_xi).sum(0) - d_dt_J_xi.sum(0)).norm()
+        d_dt_xi = self.y6.T # 3 x N
+        return ((self.sys.dL_dqdot(t)[1:4] * d_dt_xi).sum(0) - self.d_dt_J_xi_chain(t).sum(0)).norm()
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
 
         # data size
-        N = t.size(dim=2)
+        N = t.size(dim=0)
 
         # nonholonomic momentum cost
         J1 = self.J_nhc(t)
@@ -189,9 +158,12 @@ class FNN(nn.Module):
 
         return J1
 
-    def train(self, X, t):
+    def train(self, t):
+        
+        xi_0 = torch.tensor(0)
+
         # Forward propagation
-        xi = self.forward(X)
+        xi = self.forward(xi_0, t)
 
         # Backward propagation and gradient descent
         J = self.backward(t)

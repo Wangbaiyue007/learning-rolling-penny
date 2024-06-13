@@ -2,24 +2,23 @@ import torch
 from model import FNN
 import matplotlib.pyplot as plt
 
+# time series
+t = torch.arange(0., 20., 0.05)
+N = t.size(dim=0)
+# t = t.view(1, N)
+
 # Network
-nn = FNN(input_dim=4)
+nn = FNN(t, input_dim=8)
 num_epochs = 1000
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
-# randomize time
-t = torch.arange(0., 20., 0.05)
-N = t.size(dim=0)
-t = t.view(1, N)
-t = t.repeat(4,1,1)
-t.requires_grad_()
-q = nn.sys.q(t)
-q.requires_grad_()
+# t.requires_grad_()
+# q.requires_grad_()
 
 # vector field before training
-xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(q).T.reshape(N,3,1))
-xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
+# xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(q, t).T.reshape(N,3,1))
+# xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
 
 # training
 for epoch in range(num_epochs):
@@ -28,7 +27,7 @@ for epoch in range(num_epochs):
     # xi = nn.forward(q)
 
     # train
-    xi, J = nn.train(q, t)
+    xi, J = nn.train(t)
 
     # print our mean cross entropy loss
     if epoch % 100 == 0:
@@ -44,15 +43,12 @@ for epoch in range(num_epochs):
     
 
 # vector field after training
-xi = nn.forward(q).T
+xi = nn.forward(q, t).T
 xi_np = xi.detach().cpu().numpy()
 xi_Q = nn.gen.generator(t).matmul(xi.reshape(N,3,1))
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
 print('xi_Q = {}'.format(xi_Q))
-print('xi(1, 0, 0) = {}'.format(nn.forward_(torch.tensor([0.,1.,0.,0.]).T)))
-print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
-print('xi(0, 0, 1) = {}'.format(nn.forward_(torch.tensor([0.,0.,0.,1.]).T)))
 
 plt.rcParams['text.usetex'] = True
 fig = plt.figure(figsize=plt.figaspect(0.3))
