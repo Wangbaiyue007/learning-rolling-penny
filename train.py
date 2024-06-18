@@ -9,7 +9,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
 # randomize time
-t = torch.arange(0., 20., 0.05)
+t = torch.arange(0., 20., 0.01)
 N = t.size(dim=0)
 t = t.view(1, N)
 t = t.repeat(4,1,1)
@@ -18,7 +18,8 @@ q = nn.sys.q(t)
 q.requires_grad_()
 
 # vector field before training
-xi_Q_0 = nn.gen.generator(t).matmul(nn.forward(q).T.reshape(N,3,1))
+nn.forward(q)
+xi_Q_0 = nn.xi_Q(t)
 xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
 
 # training
@@ -31,7 +32,7 @@ for epoch in range(num_epochs):
     xi, J = nn.train(q, t)
 
     # print our mean cross entropy loss
-    if epoch % 100 == 0:
+    if epoch % 10 == 0:
         print('Epoch {} | Loss: {}'.format(epoch, J))
 
         # t = torch.cat([t[10:], t[:10]], dim=0)
@@ -46,13 +47,13 @@ for epoch in range(num_epochs):
 # vector field after training
 xi = nn.forward(q).T
 xi_np = xi.detach().cpu().numpy()
-xi_Q = nn.gen.generator(t).matmul(xi.reshape(N,3,1))
+xi_Q = nn.xi_Q(t)
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
-print('xi_Q = {}'.format(xi_Q))
-print('xi(1, 0, 0) = {}'.format(nn.forward_(torch.tensor([0.,1.,0.,0.]).T)))
-print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
-print('xi(0, 0, 1) = {}'.format(nn.forward_(torch.tensor([0.,0.,0.,1.]).T)))
+# print('xi_Q = {}'.format(xi_Q))
+# print('xi(1, 0, 0) = {}'.format(nn.forward_(torch.tensor([0.,1.,0.,0.]).T)))
+# print('xi(0, 1, 0) = {}'.format(nn.forward_(torch.tensor([0.,0.,1.,0.]).T)))
+# print('xi(0, 0, 1) = {}'.format(nn.forward_(torch.tensor([0.,0.,0.,1.]).T)))
 
 plt.rcParams['text.usetex'] = True
 fig = plt.figure(figsize=plt.figaspect(0.3))
