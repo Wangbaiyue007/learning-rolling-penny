@@ -30,7 +30,7 @@ for epoch in range(num_epochs):
     xi, J = nn.train(t)
 
     # print our mean cross entropy loss
-    if epoch % 100 == 0:
+    if epoch % 10 == 0:
         print('Epoch {} | Loss: {}'.format(epoch, J))
 
         # t = torch.cat([t[10:], t[:10]], dim=0)
@@ -45,7 +45,7 @@ for epoch in range(num_epochs):
 # vector field after training
 xi = nn.forward(q, t).T
 xi_np = xi.detach().cpu().numpy()
-xi_Q = nn.gen.generator(t).matmul(xi.reshape(N,3,1))
+xi_Q = nn.xi_Q(t)
 xi_Q_np = xi_Q.detach().cpu().numpy() 
 
 print('xi_Q = {}'.format(xi_Q))

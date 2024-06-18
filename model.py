@@ -39,7 +39,7 @@ class FNN(nn.Module):
         self.sys = self.gen.sys
 
         # Momentum in gradient
-        self.gamma = 0.3
+        self.gamma = 0.1
         self.dJ_dw1_m = torch.zeros(self.w1.size())
         self.dJ_dw2_m = torch.zeros(self.w2.size())
         self.dJ_dw3_m = torch.zeros(self.w3.size())
@@ -75,9 +75,9 @@ class FNN(nn.Module):
         # Third nonlinearity
         # self.y6 = self.normalize(self.sigmoid(self.y5)) # N x 3
         # self.y6 = self.normalize(m(self.y5)) # N x 3
-        self.y6 = self.normalize(self.y5)
+        # self.y6 = self.normalize(self.y5)
         # self.y6 = m(self.y5)
-        # self.y6 = self.y5
+        self.y6 = self.y5
         return self.y6.T
     
     # Lie algebra element xi
@@ -106,8 +106,9 @@ class FNN(nn.Module):
     
     # Nonholonomic momentum cost
     def J_nhc(self, t: torch.Tensor) -> torch.Tensor:
-        d_dt_xi = self.y6.T # 3 x N
-        return ((self.sys.dL_dqdot(t)[1:4] * d_dt_xi).sum(0) - self.d_dt_J_xi_chain(t).sum(0)).norm()
+        d_dt_xi = self.d_dt_xi(t) # 3 x N
+        d_dt_J_xi = self.d_dt_J_xi(t)
+        return 1 * ((self.sys.dL_dqdot(t)[1:4] * d_dt_xi).sum(0) - d_dt_J_xi.sum(0)).norm()
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -116,13 +117,16 @@ class FNN(nn.Module):
         N = t.size(dim=0)
 
         # nonholonomic momentum cost
-        J1 = self.J_nhc(t)
+        # J1 = self.J_nhc(t)
         # J1 = (self.sys.dL_dqdot(t)[1:4] * self.d_dt_xi(t)).sum(0).norm()
         # J1 = self.d_dt_J_xi(t).sum(0).norm()
         # J1 = 0
+
+        # null space cost
+        J1 = self.J_nullspace(t)
         
         # regularization
-        # J2 =  (torch.ones_like(self.y6).norm() - self.y6.norm()).norm()
+        # J2 =  - 0.6 * self.y6.norm()
         # J2 = torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0).norm()
         # J2 = - 0.1 * self.xi_Q(t).norm()
         # J2 = - 1 * self.d_dt_xi(t).norm()
