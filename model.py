@@ -17,7 +17,7 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-4
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -74,10 +74,10 @@ class FNN(nn.Module):
 
         # Third nonlinearity
         # self.y6 = self.normalize(self.sigmoid(self.y5)) # N x 3
-        # self.y6 = self.normalize(m(self.y5)) # N x 3
+        self.y6 = 2 * self.normalize(m(self.y5)) # N x 3
         # self.y6 = self.normalize(self.y5)
         # self.y6 = m(self.y5)
-        self.y6 = self.y5
+        # self.y6 = self.y5
         return self.y6.T
     
     # Lie algebra element xi
