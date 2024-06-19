@@ -4,21 +4,21 @@ import matplotlib.pyplot as plt
 
 # Network
 nn = FNN(input_dim=4)
-num_epochs = 1000
+num_epochs = 10000
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
 # randomize time
-t = torch.arange(0., 20., 0.01)
+t = torch.arange(0., 20, 0.01)
 N = t.size(dim=0)
 t = t.view(1, N)
 t = t.repeat(4,1,1)
-t.requires_grad_()
+# t.requires_grad_()
 q = nn.sys.q(t)
-q.requires_grad_()
+# q.requires_grad_()
 
 # vector field before training
-nn.forward(q)
+xi_0 = nn.forward(q).T
 xi_Q_0 = nn.xi_Q(t)
 xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
 
