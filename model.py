@@ -74,18 +74,37 @@ class FNN(nn.Module):
 
         # Third nonlinearity
         # self.y6 = self.normalize(self.sigmoid(self.y5)) # N x 3
-        self.y6 = 2 * self.normalize(m(self.y5)) # N x 3
+        # self.y6 = 1.414 * self.normalize(m(self.y5)) # N x 3
         # self.y6 = self.normalize(self.y5)
+        self.y6 = torch.nn.functional.normalize(self.y5)
         # self.y6 = m(self.y5)
         # self.y6 = self.y5
         return self.y6.T
     
-    # Lie algebra element xi
-    def xi(self, t: torch.Tensor) -> torch.Tensor:
-        xi_0 = self.y6[0]
-        breakpoint()
-        self._xi = odeint(self.forward, xi_0, t, method='dopri5') # numerical integration of NN
-        return self._xi
+    # Forward propagation without updating
+    def forward_(self, X:torch.Tensor):
+        m = nn.Tanh()
+
+        # First linear layer
+        y1 = torch.matmul(X.T, self.w1)
+
+        # First non-linearity
+        y2 = m(y1)
+
+        # Second linear layer
+        y3 = torch.matmul(y2, self.w2)
+
+        # Second non-linearity
+        y4 = m(y3)
+
+        # Third linear layer
+        y5 = torch.matmul(y4, self.w3)
+
+        # Third nonlinearity
+        y6 = self.normalize_(y5) # N x 3
+        # y6 = m(y5)
+        # y6 = y5
+        return y6.T
     
     # Vector field of Lie algebra
     def xi_Q(self, t:torch.Tensor) -> torch.Tensor:
@@ -96,19 +115,9 @@ class FNN(nn.Module):
         N = t.size(dim=0)
         return (self.gen.generator(t) @ self.y6.T.reshape(N,3,1)).reshape(N,3).T + (self.gen.d_dt_generator(t) @ self.xi(t).reshape(N,3,1)).reshape(N,3).T
     
-    # Momentum map
-    def J_xi(self, t:torch.Tensor) -> torch.Tensor:
-        return (self.sys.dL_dqdot(t)[1:4] * self.xi_Q(t).T).sum(0) # 1 x N
-    
-    # Time derivative of momentum map using the chain rule
-    def d_dt_J_xi_chain(self, t:torch.Tensor) -> torch.Tensor:
-        return self.sys.d_dt_dL_dqdot(t)[0][1:4] * self.xi_Q(t).T + self.sys.dL_dqdot(t)[1:4] * self.d_dt_xi_Q(t)
-    
-    # Nonholonomic momentum cost
-    def J_nhc(self, t: torch.Tensor) -> torch.Tensor:
-        d_dt_xi = self.d_dt_xi(t) # 3 x N
-        d_dt_J_xi = self.d_dt_J_xi(t)
-        return 1 * ((self.sys.dL_dqdot(t)[1:4] * d_dt_xi).sum(0) - d_dt_J_xi.sum(0)).norm()
+    # Null space cost
+    def J_nullspace(self, t: torch.Tensor) -> torch.Tensor:
+        return (self.xi_Q(t) @ self.sys.q_dot(t)[1:4]).diag(0).norm()
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -126,7 +135,7 @@ class FNN(nn.Module):
         J1 = self.J_nullspace(t)
         
         # regularization
-        # J2 =  - 0.6 * self.y6.norm()
+        # J2 =  - 1 * self.y6.norm()
         # J2 = torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0).norm()
         # J2 = - 0.1 * self.xi_Q(t).norm()
         # J2 = - 1 * self.d_dt_xi(t).norm()
