@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 # Network
 nn = FNN(input_dim=4)
-num_epochs = 5000
+num_epochs = 3000
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 

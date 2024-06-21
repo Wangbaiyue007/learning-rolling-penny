@@ -33,10 +33,10 @@ class InfGenerator:
         def __init__(self, 
                     Omega: torch.double = 1,
                     omega: torch.double = 1,
-                    R: torch.double = 10,
+                    R: torch.double = 1,
                     phi_0: torch.double = 0,
-                    x_0: torch.double = 0,
-                    y_0: torch.double = 0,
+                    x_0: torch.double = 10,
+                    y_0: torch.double = 10,
                     I: torch.double = 1,
                     J: torch.double = 1,
                     m: torch.double = 1) -> None:
@@ -83,7 +83,7 @@ class InfGenerator:
             return self.Omega/self.omega * self.R * torch.sin(self.omega*t + self.phi_0) + self.x_0
 
         def y(self, t: torch.Tensor) -> torch.Tensor:
-            return -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.x_0
+            return -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.y_0
         
         def q(self, t: torch.Tensor) -> torch.Tensor:
             return torch.cat([self.theta(t[0]), self.phi(t[1]), self.x(t[2]), self.y(t[3])], axis=0)
