@@ -5,7 +5,7 @@ from motion import InfGenerator
 from torchdiffeq import odeint
 
 class FNN(nn.Module):
-    def __init__(self, t: torch.Tensor, input_dim=3, hidden_dim=50, output_dim=3):
+    def __init__(self, input_dim=3, hidden_dim=20, output_dim=3):
         super().__init__()
 
         # Time series
@@ -17,7 +17,7 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate = 1e-4
+        self.learning_rate = 1e-3
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -108,16 +108,12 @@ class FNN(nn.Module):
     
     # Vector field of Lie algebra
     def xi_Q(self, t:torch.Tensor) -> torch.Tensor:
-        N = t.size(dim=0)
-        return (self.gen.generator(t) @ self.xi(t).T.reshape(N,3,1)).reshape(N,3)
-    
-    def d_dt_xi_Q(self, t: torch.Tensor) -> torch.Tensor:
-        N = t.size(dim=0)
-        return (self.gen.generator(t) @ self.y6.T.reshape(N,3,1)).reshape(N,3).T + (self.gen.d_dt_generator(t) @ self.xi(t).reshape(N,3,1)).reshape(N,3).T
+        N = t.size(dim=2)
+        return torch.nn.functional.normalize((self.gen.generator(t) @ self.y6.reshape(N,3,1)).reshape(N,3), dim=1)
     
     # Null space cost
-    def J_nullspace(self, t: torch.Tensor) -> torch.Tensor:
-        return (self.xi_Q(t) @ self.sys.q_dot(t)[1:4]).diag(0).norm()
+    def J_dist(self, t: torch.Tensor) -> torch.Tensor:
+        return (self.xi_Q(t).T - torch.nn.functional.normalize(self.sys.q_dot(t)[1:4], dim=0)).norm()**2
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -132,7 +128,7 @@ class FNN(nn.Module):
         # J1 = 0
 
         # null space cost
-        J1 = self.J_nullspace(t)
+        J1 = self.J_dist(t) / N
         
         # regularization
         # J2 =  - 1 * self.y6.norm()
