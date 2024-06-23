@@ -1,11 +1,13 @@
 from model import FNN
 import torch
+import numpy as np
 import matplotlib.pyplot as plt
 
 class Plot():
     def __init__(self, nn: FNN, t: torch.Tensor, xi_Q_0: torch.Tensor) -> None:
         q = nn.sys.q(t)
         self.N = t.size(dim=2)
+        self.gen_type = nn.gen_type
 
         # vector field before training
         self.xi_Q_0_np = xi_Q_0.detach().cpu().numpy() 
@@ -22,6 +24,7 @@ class Plot():
         self.x = q[2].detach().cpu().numpy()
         self.y = q[3].detach().cpu().numpy()
         self.t = t[0].detach().cpu().numpy().reshape(self.N)
+        self.R = nn.sys.R
 
     def plot(self, save_fig=True) -> None:
         plt.rcParams['text.usetex'] = True
@@ -55,13 +58,15 @@ class Plot():
         ax.set_ylim(-1.5, 1.5)
         ax.set_zlim(-1.5, 1.5)
 
-        if save_fig: plt.savefig('figs/vfield.png')
+        if save_fig: plt.savefig(f'figs/vfield_{self.gen_type}.png')
 
         # fig 2
         fig2 = plt.figure(figsize=plt.figaspect(0.3))
         ax2 = fig2.add_subplot(1, 3, 1)
         ax2.set_title('(a) First Lie Algebra Element', fontsize=18)
         ax2.plot(self.t, self.xi_np[:,0].reshape(self.N), label=r'$\xi_1^q$')
+        if self.gen_type == 'S1xR2':
+            ax2.plot(self.t, 1 / self.R * np.ones_like(self.t), label=r'$\frac{1}{R}$')
         ax2.legend(loc='upper right')
         ax2.grid()
 
@@ -69,17 +74,23 @@ class Plot():
         ax2.set_xlabel('t', fontsize=15)
         ax2.set_title('(b) Second Lie Algebra Element', fontsize=18)
         ax2.plot(self.t, self.xi_np[:,1].reshape(self.N), label=r'$\xi_2^q$')
-        ax2.plot(self.t, self.y, label=r'$y$')
+        if self.gen_type == 'SE(2)':
+            ax2.plot(self.t, self.y, label=r'$y$')
+        elif self.gen_type == 'S1xR2':
+            ax2.plot(self.t, np.cos(self.phi), label=r'$\cos\phi$')
         ax2.legend(loc='upper right')
         ax2.grid()
 
         ax2 = fig2.add_subplot(1, 3, 3)
         ax2.set_title('(c) Third Lie Algebra Element', fontsize=18)
         ax2.plot(self.t, self.xi_np[:,2].reshape(self.N), label=r'$\xi_3^q$')
-        ax2.plot(self.t, self.x, label=r'$x$')
+        if self.gen_type == 'SE(2)':
+            ax2.plot(self.t, self.x, label=r'$x$')
+        elif self.gen_type == 'S1xR2':
+            ax2.plot(self.t, np.sin(self.phi), label=r'$\sin\phi$')
         ax2.legend(loc='upper right')
         ax2.grid()
 
-        if save_fig: plt.savefig('figs/LieAlg.png')
+        if save_fig: plt.savefig(f'figs/LieAlg_{self.gen_type}.png')
         
         plt.show()
