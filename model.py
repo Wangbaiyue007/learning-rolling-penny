@@ -3,7 +3,7 @@ from torch import nn
 from motion import InfGenerator
 
 class FNN(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=10, output_dim=3):
+    def __init__(self, type, input_dim=3, hidden_dim=10, output_dim=3):
         super().__init__()
 
         # Dimensions for input, hidden and output
@@ -28,7 +28,8 @@ class FNN(nn.Module):
         self.w3.requires_grad_()
 
         # create infenitisimal generator
-        self.gen = InfGenerator()
+        self.gen = InfGenerator(type=type)
+        self.gen_type = type
 
         # Initialize dynamical system
         self.sys = self.gen.sys
@@ -74,6 +75,7 @@ class FNN(nn.Module):
 
         # Third nonlinearity
         self.y6 = self.normalize(self.y5)
+        # self.y6 = self.y5
         return self.y6.T
     
     # Vector field of Lie algebra
@@ -87,7 +89,11 @@ class FNN(nn.Module):
     
     # Distribution cost
     def J_dist(self, t: torch.Tensor) -> torch.Tensor:
-        return (self.y6.T - torch.nn.functional.normalize(self.sys.q_dot(t)[1:4], dim=0)).norm()**2
+        if self.gen_type == 'SE(2)':
+            q_dot = self.sys.q_dot(t)[1:4]
+        elif self.gen_type == 'S1xR2':
+            q_dot = torch.index_select(self.sys.q_dot(t), dim=0, index=torch.tensor([0, 2, 3]))
+        return (self.y6.T - torch.nn.functional.normalize(q_dot, dim=0)).norm()**2
 
     # Null space cost
     def J_null(self, t: torch.Tensor) -> torch.Tensor:

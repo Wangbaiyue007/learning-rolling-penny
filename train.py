@@ -3,7 +3,7 @@ from model import FNN
 from plot import Plot
 
 # Network
-nn = FNN(input_dim=4)
+nn = FNN(type='SE(2)', input_dim=4)
 num_epochs = 5001
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
@@ -21,9 +21,6 @@ xi_Q_0 = nn.xi_Q(t)
 
 # training
 for epoch in range(num_epochs):
-
-    # predictions
-    # xi = nn.forward(q)
 
     # train
     xi, J = nn.train(q, t)
