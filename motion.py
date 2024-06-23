@@ -16,7 +16,7 @@ class InfGenerator:
             return gen
             # return torch.tensor([[1., 0, 0], [-self.sys.y(t), 1., 0], [self.sys.x(t), 0, 1]])
         elif self.type == 'S1xR2':
-            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]])
+            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]]).repeat(N,1,1).reshape(N,3,3)
         
     def generator_inv(self, t: torch.Tensor) -> torch.Tensor:
         N = t.size(dim=2)
@@ -27,23 +27,13 @@ class InfGenerator:
             return gen
             # return torch.tensor([[1., 0, 0], [-self.sys.y(t), 1., 0], [self.sys.x(t), 0, 1]])
         elif self.type == 'S1xR2':
-            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]])
-        
-    def d_dt_generator(self, t):
-        N = t.size(dim=0)
-        if self.type == 'SE(2)':
-            gen = -self.sys.q_dot(t)[3].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [1, 0., 0.], [0., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
-                    self.sys.q_dot(t)[2].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [1., 0., 0.]]).repeat(N,1,1).reshape(N,3,3)
-            return gen
-            # return torch.tensor([[0, 0, 0], [-self.sys.y_dot(t), 0, 0], [self.sys.x_dot(t), 0, 0]])
-        elif self.type == 'S1xR2':
-            return torch.tensor([[0, 0, 0], [0, 0, 0], [0, 0, 0]])
+            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]]).repeat(N,1,1).reshape(N,3,3)
         
     class EquationsOfMotion:
 
         def __init__(self, 
                     Omega: torch.double = 1,
-                    omega: torch.double = 5,
+                    omega: torch.double = 3,
                     R: torch.double = 1,
                     phi_0: torch.double = 0,
                     x_0: torch.double = 0,
