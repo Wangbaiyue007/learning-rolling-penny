@@ -3,7 +3,7 @@ from torch import nn
 from motion import InfGenerator
 
 class FNN(nn.Module):
-    def __init__(self, input_dim=3, hidden_dim=20, output_dim=3):
+    def __init__(self, input_dim=3, hidden_dim=10, output_dim=3):
         super().__init__()
 
         # Dimensions for input, hidden and output
@@ -12,7 +12,7 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate = 1e-3
+        self.learning_rate = 1e-4
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -73,47 +73,25 @@ class FNN(nn.Module):
         self.y5 = torch.matmul(self.y4, self.w3)
 
         # Third nonlinearity
-        # self.y6 = self.normalize(self.sigmoid(self.y5)) # N x 3
-        # self.y6 = 1.414 * self.normalize(m(self.y5)) # N x 3
-        # self.y6 = self.normalize(self.y5)
-        self.y6 = torch.nn.functional.normalize(self.y5)
-        # self.y6 = m(self.y5)
-        # self.y6 = self.y5
+        self.y6 = self.normalize(self.y5)
         return self.y6.T
-    
-    # Forward propagation without updating
-    def forward_(self, X:torch.Tensor):
-        m = nn.Tanh()
-
-        # First linear layer
-        y1 = torch.matmul(X.T, self.w1)
-
-        # First non-linearity
-        y2 = m(y1)
-
-        # Second linear layer
-        y3 = torch.matmul(y2, self.w2)
-
-        # Second non-linearity
-        y4 = m(y3)
-
-        # Third linear layer
-        y5 = torch.matmul(y4, self.w3)
-
-        # Third nonlinearity
-        y6 = self.normalize_(y5) # N x 3
-        # y6 = m(y5)
-        # y6 = y5
-        return y6.T
     
     # Vector field of Lie algebra
     def xi_Q(self, t:torch.Tensor) -> torch.Tensor:
         N = t.size(dim=2)
-        return torch.nn.functional.normalize((self.gen.generator(t) @ self.y6.reshape(N,3,1)).reshape(N,3), dim=1)
+        return (self.gen.generator(t) @ self.y6.reshape(N,3,1)).reshape(N,3)
     
-    # Null space cost
+    def xi(self, t: torch.Tensor) -> torch.Tensor:
+        N = t.size(dim=2)
+        return (self.gen.generator_inv(t) @ self.y6.reshape(N,3,1)).reshape(N,3)
+    
+    # Distribution cost
     def J_dist(self, t: torch.Tensor) -> torch.Tensor:
-        return (self.xi_Q(t).T - torch.nn.functional.normalize(self.sys.q_dot(t)[1:4], dim=0)).norm()**2
+        return (self.y6.T - torch.nn.functional.normalize(self.sys.q_dot(t)[1:4], dim=0)).norm()**2
+
+    # Null space cost
+    def J_null(self, t: torch.Tensor) -> torch.Tensor:
+        return (self.y6 @ self.sys.q_dot(t)[1:4]).diag(0).norm()**2
     
     # Loss function
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
@@ -121,20 +99,10 @@ class FNN(nn.Module):
         # data size
         N = t.size(dim=2)
 
-        # nonholonomic momentum cost
-        # J1 = self.J_nhc(t)
-        # J1 = (self.sys.dL_dqdot(t)[1:4] * self.d_dt_xi(t)).sum(0).norm()
-        # J1 = self.d_dt_J_xi(t).sum(0).norm()
-        # J1 = 0
-
         # null space cost
         J1 = self.J_dist(t) / N
         
         # regularization
-        # J2 =  - 1 * self.y6.norm()
-        # J2 = torch.matmul(self.sys.dL_dqdot(t)[1:4].T, d_dt_forward).diag(0).norm()
-        # J2 = - 0.1 * self.xi_Q(t).norm()
-        # J2 = - 1 * self.d_dt_xi(t).norm()
         J2 = 0
 
         # ground truth

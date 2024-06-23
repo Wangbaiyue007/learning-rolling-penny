@@ -18,6 +18,17 @@ class InfGenerator:
         elif self.type == 'S1xR2':
             return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]])
         
+    def generator_inv(self, t: torch.Tensor) -> torch.Tensor:
+        N = t.size(dim=2)
+        if self.type == 'SE(2)':
+            gen = self.sys.y(t[2]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [1., 0., 0.], [0., 0., 0.]]) + \
+                    self.sys.x(t[3]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [-1., 0., 0.]]) + \
+                    torch.tensor([[1., 0, 0], [0., 1., 0], [0., 0., 1.]]).repeat(N,1,1).reshape(N,3,3)
+            return gen
+            # return torch.tensor([[1., 0, 0], [-self.sys.y(t), 1., 0], [self.sys.x(t), 0, 1]])
+        elif self.type == 'S1xR2':
+            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]])
+        
     def d_dt_generator(self, t):
         N = t.size(dim=2)
         if self.type == 'SE(2)':
@@ -32,11 +43,11 @@ class InfGenerator:
 
         def __init__(self, 
                     Omega: torch.double = 1,
-                    omega: torch.double = 1,
+                    omega: torch.double = 5,
                     R: torch.double = 1,
                     phi_0: torch.double = 0,
-                    x_0: torch.double = 10,
-                    y_0: torch.double = 10,
+                    x_0: torch.double = 0,
+                    y_0: torch.double = 0,
                     I: torch.double = 1,
                     J: torch.double = 1,
                     m: torch.double = 1) -> None:
