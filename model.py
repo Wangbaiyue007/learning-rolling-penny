@@ -17,7 +17,7 @@ class FNN(nn.Module):
         self.output_dim = output_dim
 
         # Learning rate definition
-        self.learning_rate = 1e-4
+        self.learning_rate = 1e-3
 
         # Our parameters (weights)
         # w1: 3 x 100
@@ -44,16 +44,12 @@ class FNN(nn.Module):
         self.dJ_dw1_m = torch.zeros(self.w1.size())
         self.dJ_dw2_m = torch.zeros(self.w2.size())
         self.dJ_dw3_m = torch.zeros(self.w3.size())
-
     
     def normalize(self, x:torch.Tensor) -> torch.Tensor:
         return x / x.norm(dim=1).reshape(x.size(dim=0), 1)
-    
-    def normalize_(self, x:torch.Tensor) -> torch.Tensor:
-        return x / x.norm()
 
-    # Forward propagation: time derivative of Lie algebra
-    def forward(self, xi_0, t: torch.Tensor) -> torch.Tensor:
+    # Forward propagation
+    def forward(self, X:torch.Tensor) -> torch.Tensor:
         m = nn.Tanh()
 
         TQ = torch.cat([self.sys.q(t), self.sys.q_dot(t)], dim=0) 
@@ -74,8 +70,8 @@ class FNN(nn.Module):
         self.y5 = torch.matmul(self.y4, self.w3)
 
         # Third nonlinearity
-        self.y6 = self.normalize(self.y5)
-        # self.y6 = self.y5
+        # self.y6 = self.normalize(self.y5)
+        self.y6 = self.y5
         return self.y6.T
     
     # Vector field of Lie algebra
@@ -110,9 +106,6 @@ class FNN(nn.Module):
         
         # regularization
         J2 = 0
-
-        # ground truth
-        # J2 = (torch.tensor([[1.], [0.], [0.]]).repeat(1,N) + self.sys.y(t[2]) * torch.tensor([[0.], [1.], [0.]]) - self.sys.x(t[3]) * torch.tensor([[0.], [0.], [1.]]) - self.y6.T).norm()
 
         J = J1 + J2
 

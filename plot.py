@@ -66,7 +66,7 @@ class Plot():
         ax2.set_title('(a) First Lie Algebra Element', fontsize=18)
         ax2.plot(self.t, self.xi_np[:,0].reshape(self.N), label=r'$\xi_1^q$')
         if self.gen_type == 'S1xR2':
-            ax2.plot(self.t, 1 / self.R * np.ones_like(self.t), label=r'$\frac{1}{R}$')
+            ax2.plot(self.t, 1 / np.sqrt(self.R**2 + 1) * np.ones_like(self.t), label=r'$\frac{1}{\sqrt{R^2+1}}$')
         ax2.legend(loc='upper right')
         ax2.grid()
 
@@ -77,7 +77,7 @@ class Plot():
         if self.gen_type == 'SE(2)':
             ax2.plot(self.t, self.y, label=r'$y$')
         elif self.gen_type == 'S1xR2':
-            ax2.plot(self.t, np.cos(self.phi), label=r'$\cos\phi$')
+            ax2.plot(self.t, self.R / np.sqrt(self.R**2 + 1) * np.cos(self.phi), label=r'$\frac{R}{\sqrt{R^2+1}}\cos\phi$')
         ax2.legend(loc='upper right')
         ax2.grid()
 
@@ -87,7 +87,7 @@ class Plot():
         if self.gen_type == 'SE(2)':
             ax2.plot(self.t, self.x, label=r'$x$')
         elif self.gen_type == 'S1xR2':
-            ax2.plot(self.t, np.sin(self.phi), label=r'$\sin\phi$')
+            ax2.plot(self.t, self.R / np.sqrt(self.R**2 + 1) * np.sin(self.phi), label=r'$\frac{R}{\sqrt{R^2+1}}\sin\phi$')
         ax2.legend(loc='upper right')
         ax2.grid()
 

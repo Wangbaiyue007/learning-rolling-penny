@@ -3,12 +3,12 @@ from model import FNN
 from plot import Plot
 
 # Network
-nn = FNN(type='SE(2)', input_dim=4)
-num_epochs = 5001
+nn = FNN(type='S1xR2', input_dim=4)
+num_epochs = 10001
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
-# randomize time
+# initialize time
 t = torch.arange(0., 20, 0.01)
 N = t.size(dim=0)
 t = t.view(1, N)
@@ -25,7 +25,7 @@ for epoch in range(num_epochs):
     # train
     xi, J = nn.train(t)
 
-    # print our mean cross entropy loss
+    # print our loss value
     if epoch % 100 == 0:
         print('Epoch {} | Loss: {}'.format(epoch, J))
 
