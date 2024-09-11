@@ -34,7 +34,7 @@ class InfGenerator:
         def __init__(self, 
                     Omega: torch.double = 1,
                     omega: torch.double = 3,
-                    R: torch.double = 1,
+                    R: torch.double = 3,
                     phi_0: torch.double = 0,
                     x_0: torch.double = 0,
                     y_0: torch.double = 0,
