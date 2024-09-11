@@ -64,8 +64,8 @@ class FNN(nn.Module):
         self.y5 = torch.matmul(self.y4, self.w3)
 
         # Third nonlinearity
-        # self.y6 = self.normalize(self.y5)
-        self.y6 = self.y5
+        self.y6 = self.normalize(self.y5)
+        # self.y6 = self.y5
         return self.y6.T
     
     # Vector field of Lie algebra

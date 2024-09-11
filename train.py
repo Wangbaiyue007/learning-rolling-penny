@@ -4,7 +4,7 @@ from plot import Plot
 
 # Network
 nn = FNN(type='S1xR2', input_dim=4)
-num_epochs = 10001
+num_epochs = 3001
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 nn.to(device)
 
