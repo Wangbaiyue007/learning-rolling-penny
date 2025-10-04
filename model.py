@@ -1,15 +1,10 @@
 import torch
 from torch import nn
-import numpy as np
 from motion import InfGenerator
-from torchdiffeq import odeint
 
 class FNN(nn.Module):
     def __init__(self, type, input_dim=3, hidden_dim=10, output_dim=3):
         super().__init__()
-
-        # Time series
-        self.t = t
 
         # Dimensions for input, hidden and output
         self.input_dim = input_dim
@@ -51,11 +46,10 @@ class FNN(nn.Module):
     # Forward propagation
     def forward(self, X:torch.Tensor) -> torch.Tensor:
         m = nn.Tanh()
-
-        TQ = torch.cat([self.sys.q(t), self.sys.q_dot(t)], dim=0) 
+        self.q = X
 
         # First linear layer
-        self.y1 = torch.matmul(TQ.T, self.w1)
+        self.y1 = torch.matmul(X.T, self.w1)
 
         # First non-linearity
         self.y2 = m(self.y1)
@@ -99,7 +93,7 @@ class FNN(nn.Module):
     def J_theta(self, t: torch.Tensor) -> torch.Tensor:
 
         # data size
-        N = t.size(dim=0)
+        N = t.size(dim=2)
 
         # null space cost
         J1 = self.J_dist(t) / N
@@ -134,12 +128,9 @@ class FNN(nn.Module):
 
         return J1
 
-    def train(self, t):
-        
-        xi_0 = torch.tensor(0)
-
+    def train(self, X, t):
         # Forward propagation
-        xi = self.forward(xi_0, t)
+        xi = self.forward(X)
 
         # Backward propagation and gradient descent
         J = self.backward(t)

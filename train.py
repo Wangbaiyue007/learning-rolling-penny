@@ -23,7 +23,7 @@ xi_Q_0 = nn.xi_Q(t)
 for epoch in range(num_epochs):
 
     # train
-    xi, J = nn.train(t)
+    xi, J = nn.train(q, t)
 
     # print our loss value
     if epoch % 100 == 0:

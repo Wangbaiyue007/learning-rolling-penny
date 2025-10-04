@@ -8,10 +8,10 @@ class InfGenerator:
         self.sys = self.EquationsOfMotion()
 
     def generator(self, t:torch.Tensor) -> torch.Tensor:
-        N = t.size(dim=0)
+        N = t.size(dim=2)
         if self.type == 'SE(2)':
-            gen = self.sys.q(t)[3].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [-1., 0., 0.], [0., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
-                    self.sys.q(t)[2].reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [1., 0., 0.]]).repeat(N,1,1).reshape(N,3,3) + \
+            gen = self.sys.y(t[2]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [-1., 0., 0.], [0., 0., 0.]]) + \
+                    self.sys.x(t[3]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [1., 0., 0.]]) + \
                     torch.tensor([[1., 0, 0], [0., 1., 0], [0., 0., 1.]]).repeat(N,1,1).reshape(N,3,3)
             return gen
             # return torch.tensor([[1., 0, 0], [-self.sys.y(t), 1., 0], [self.sys.x(t), 0, 1]])
@@ -55,33 +55,24 @@ class InfGenerator:
         '''
         Equations of motion for training
         '''
-        def theta_ddot(self, t: torch.Tensor) -> torch.Tensor:
-            return torch.zeros(1, t.size(dim=0))
-
-        def phi_ddot(self, t: torch.Tensor) -> torch.Tensor:
-            return torch.zeros(1, t.size(dim=0))
-
-        def x_ddot(self, t: torch.Tensor) -> torch.Tensor:
-            return -self.omega*self.Omega*self.R*torch.sin(self.omega*t + self.phi_0)
-
-        def y_ddot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.omega*self.Omega*self.R*torch.cos(self.omega*t + self.phi_0)
-        
         def theta_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.Omega * torch.ones(1, t.size(dim=0))
+            return self.Omega * torch.ones(1, t.size(dim=1))
+            # return torch.autograd.grad(self.theta(t), t, torch.ones_like(self.theta(t)), retain_graph=True, create_graph=True)[0]
 
         def phi_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.omega * torch.ones(1, t.size(dim=0))
+            return self.omega * torch.ones(1, t.size(dim=1))
+            # return torch.autograd.grad(self.phi(t), t, torch.ones_like(self.phi(t)), retain_graph=True, create_graph=True)[0]
 
         def x_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega*self.R*torch.cos(self.omega*t + self.phi_0)
+            # return torch.autograd.grad(self.x(t), t, torch.ones_like(self.x(t)), retain_graph=True, create_graph=True)[0]
 
         def y_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega*self.R*torch.sin(self.omega*t + self.phi_0)
+            # return torch.autograd.grad(self.y(t), t, torch.ones_like(self.y(t)), retain_graph=True, create_graph=True)[0]
         
         def q_dot(self, t: torch.Tensor) -> torch.Tensor:
-            N = t.size(dim=0)
-            return torch.cat([self.theta_dot(t).reshape(1,N), self.phi_dot(t).reshape(1,N), self.x_dot(t).reshape(1,N), self.y_dot(t).reshape(1,N)], axis=0)
+            return torch.cat([self.theta_dot(t[0]), self.phi_dot(t[1]), self.x_dot(t[2]), self.y_dot(t[3])], axis=0)
 
         def theta(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega*t
@@ -96,17 +87,11 @@ class InfGenerator:
             return -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.y_0
         
         def q(self, t: torch.Tensor) -> torch.Tensor:
-            N = t.size(dim=0)
-            return torch.cat([self.theta(t).reshape(1,N), self.phi(t).reshape(1,N), self.x(t).reshape(1,N), self.y(t).reshape(1,N)], axis=0)
+            return torch.cat([self.theta(t[0]), self.phi(t[1]), self.x(t[2]), self.y(t[3])], axis=0)
 
         def dL_dqdot(self, t:torch.Tensor) -> torch.Tensor:
-            N = t.size(dim=0)
-            return torch.cat([self.I * self.theta_dot(t).reshape(1,N), self.J * self.phi_dot(t).reshape(1,N), self.m * self.x_dot(t).reshape(1,N), self.m * self.y_dot(t).reshape(1,N)], axis=0)
+            return torch.cat([self.I * self.theta_dot(t[0]), self.J * self.phi_dot(t[1]), self.m * self.x_dot(t[2]), self.m * self.y_dot(t[3])], axis=0)
 
-        def d_dt_dL_dqdot(self, t:torch.Tensor) -> torch.Tensor:
-            N = t.size(dim=0)
-            return torch.cat([self.I * self.theta_ddot(t).reshape(1,N), self.J * self.phi_ddot(t).reshape(1,N), self.m * self.x_ddot(t).reshape(1,N), self.m * self.y_ddot(t).reshape(1,N)], axis=0)
-        
         def plot(self) -> None:
             x = torch.arange(-5, 5, 0.1)
             y = torch.arange(-5, 5, 0.1)
