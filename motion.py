@@ -92,6 +92,36 @@ class InfGenerator:
         def dL_dqdot(self, t:torch.Tensor) -> torch.Tensor:
             return torch.cat([self.I * self.theta_dot(t[0]), self.J * self.phi_dot(t[1]), self.m * self.x_dot(t[2]), self.m * self.y_dot(t[3])], axis=0)
 
+        def p(self, type, t:torch.Tensor) -> torch.Tensor:
+            if type == 'SE(2)':
+                p2 = self.J * self.phi_dot(t[1]) - self.m * self.y(t[3]) * self.x_dot(t[2]) + self.m * self.x(t[2]) * self.y_dot(t[3])
+                p3 = self.m * self.x_dot(t[2])
+                p4 = self.m * self.y_dot(t[3])
+                p1 = self.I * self.theta_dot(t[0]) + self.R * (torch.cos(self.phi(t[1])) * p3 + torch.sin(self.phi(t[1])) * p4)
+                return torch.cat([p1, p2, p3, p4], axis=0)
+            
+        def p_dot(self, type, t:torch.Tensor) -> torch.Tensor:
+            if type == 'SE(2)':
+                p2_dot = torch.autograd.grad(self.p(type, t)[1], t, torch.ones_like(self.p(type, t)[1]), retain_graph=True, create_graph=True)[0]
+                p3_dot = torch.autograd.grad(self.p(type, t)[2], t, torch.ones_like(self.p(type, t)[2]), retain_graph=True, create_graph=True)[0]
+                p4_dot = torch.autograd.grad(self.p(type, t)[3], t, torch.ones_like(self.p(type, t)[3]), retain_graph=True, create_graph=True)[0]
+                p1_dot = torch.autograd.grad(self.p(type, t)[0], t, torch.ones_like(self.p(type, t)[0]), retain_graph=True, create_graph=True)[0]
+                return torch.cat([p1_dot, p2_dot, p3_dot, p4_dot], axis=0)
+
+        '''
+        Utils
+        '''
+        def bracket(self, g1: torch.Tensor, g2: torch.Tensor, t:torch.Tensor) -> torch.Tensor:
+            theta = g1[0] * (torch.autograd.grad(g2[0], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[0], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[0], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[0], self.y(t[3]))) \
+                  - g2[0] * (torch.autograd.grad(g1[0], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[0], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[0], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[0], self.y(t[3])))
+            phi = g1[0] * (torch.autograd.grad(g2[1], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[1], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[1], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[1], self.y(t[3]))) \
+                - g2[0] * (torch.autograd.grad(g1[1], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[1], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[1], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[1], self.y(t[3])))
+            x = g1[0] * (torch.autograd.grad(g2[2], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[2], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[2], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[2], self.y(t[3]))) \
+              - g2[0] * (torch.autograd.grad(g1[2], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[2], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[2], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[2], self.y(t[3])))
+            y = g1[0] * (torch.autograd.grad(g2[3], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[3], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[3], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[3], self.y(t[3]))) \
+              - g2[0] * (torch.autograd.grad(g1[3], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[3], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[3], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[3], self.y(t[3])))
+            return torch.cat([theta, phi, x, y], axis=0)
+
         def plot(self) -> None:
             x = torch.arange(-5, 5, 0.1)
             y = torch.arange(-5, 5, 0.1)
