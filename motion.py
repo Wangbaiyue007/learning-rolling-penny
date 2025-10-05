@@ -52,6 +52,15 @@ class InfGenerator:
             self.J = J
             self.m = m
 
+            # precompute trajectory
+            t_pre = torch.arange(0., 20, 0.01)
+            N_pre = t_pre.size(dim=0)
+            t = t.view(1, N_pre)
+            self.theta_pre = self.theta(t_pre)
+            self.phi_pre = self.phi(t_pre)
+            self.x_pre = self.x(t_pre)
+            self.y_pre = self.y(t_pre)
+
         '''
         Equations of motion for training
         '''
@@ -92,7 +101,31 @@ class InfGenerator:
         def dL_dqdot(self, t:torch.Tensor) -> torch.Tensor:
             return torch.cat([self.I * self.theta_dot(t[0]), self.J * self.phi_dot(t[1]), self.m * self.x_dot(t[2]), self.m * self.y_dot(t[3])], axis=0)
 
+
+        '''
+        Hamel's formulation
+        '''
+        def u_alpha(self, type, t:torch.Tensor) -> torch.Tensor:
+            """
+            Constraint distribution
+            """
+            if type == 'SE(2)':
+                return torch.tensor([1., 0., self.R*torch.cos(self.phi(t[1])), self.R*torch.sin(self.phi(t[1]))]).reshape(4,1)
+        
+        def u_sigma_a(self, type, t:torch.Tensor) -> torch.Tensor:
+            """
+            Lie algebra vector field
+            """
+            if type == 'SE(2)':
+                u2 = torch.tensor([0., 1., -self.y(t[3]), self.x(t[2])]).reshape(4,1)
+                u3 = torch.tensor([0., 0., 1., 0.]).reshape(4,1)
+                u4 = torch.tensor([0., 0., 0., 1.]).reshape(4,1)
+                return torch.cat([u2, u3, u4], axis=1)
+
         def p(self, type, t:torch.Tensor) -> torch.Tensor:
+            """
+            Momentum in body frame
+            """
             if type == 'SE(2)':
                 p2 = self.J * self.phi_dot(t[1]) - self.m * self.y(t[3]) * self.x_dot(t[2]) + self.m * self.x(t[2]) * self.y_dot(t[3])
                 p3 = self.m * self.x_dot(t[2])
@@ -101,6 +134,9 @@ class InfGenerator:
                 return torch.cat([p1, p2, p3, p4], axis=0)
             
         def p_dot(self, type, t:torch.Tensor) -> torch.Tensor:
+            """
+            Dynamics based on hamel's equations
+            """
             if type == 'SE(2)':
                 p2_dot = torch.autograd.grad(self.p(type, t)[1], t, torch.ones_like(self.p(type, t)[1]), retain_graph=True, create_graph=True)[0]
                 p3_dot = torch.autograd.grad(self.p(type, t)[2], t, torch.ones_like(self.p(type, t)[2]), retain_graph=True, create_graph=True)[0]
@@ -111,16 +147,26 @@ class InfGenerator:
         '''
         Utils
         '''
+        # Lie bracket of two vector fields, assume g1 and g2 are functions of (theta, phi, x, y)
         def bracket(self, g1: torch.Tensor, g2: torch.Tensor, t:torch.Tensor) -> torch.Tensor:
-            theta = g1[0] * (torch.autograd.grad(g2[0], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[0], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[0], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[0], self.y(t[3]))) \
-                  - g2[0] * (torch.autograd.grad(g1[0], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[0], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[0], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[0], self.y(t[3])))
-            phi = g1[0] * (torch.autograd.grad(g2[1], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[1], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[1], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[1], self.y(t[3]))) \
-                - g2[0] * (torch.autograd.grad(g1[1], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[1], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[1], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[1], self.y(t[3])))
-            x = g1[0] * (torch.autograd.grad(g2[2], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[2], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[2], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[2], self.y(t[3]))) \
-              - g2[0] * (torch.autograd.grad(g1[2], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[2], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[2], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[2], self.y(t[3])))
-            y = g1[0] * (torch.autograd.grad(g2[3], self.theta(t[0]))) + g1[1] * (torch.autograd.grad(g2[3], self.phi(t[1]))) + g1[2] * (torch.autograd.grad(g2[3], self.x(t[2]))) + g1[3] * (torch.autograd.grad(g2[3], self.y(t[3]))) \
-              - g2[0] * (torch.autograd.grad(g1[3], self.theta(t[0]))) - g2[1] * (torch.autograd.grad(g1[3], self.phi(t[1]))) - g2[2] * (torch.autograd.grad(g1[3], self.x(t[2]))) - g2[3] * (torch.autograd.grad(g1[3], self.y(t[3])))
-            return torch.cat([theta, phi, x, y], axis=0)
+            u1 = g1[0] * (torch.autograd.grad(g2[0], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[0], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[0], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[0], self.y_pre)) \
+               - g2[0] * (torch.autograd.grad(g1[0], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[0], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[0], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[0], self.y_pre))
+            u2 = g1[0] * (torch.autograd.grad(g2[1], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[1], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[1], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[1], self.y_pre)) \
+               - g2[0] * (torch.autograd.grad(g1[1], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[1], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[1], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[1], self.y_pre))
+            u3 = g1[0] * (torch.autograd.grad(g2[2], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[2], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[2], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[2], self.y_pre)) \
+               - g2[0] * (torch.autograd.grad(g1[2], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[2], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[2], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[2], self.y_pre))
+            u4 = g1[0] * (torch.autograd.grad(g2[3], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[3], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[3], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[3], self.y_pre)) \
+               - g2[0] * (torch.autograd.grad(g1[3], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[3], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[3], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[3], self.y_pre))
+            return torch.cat([u1, u2, u3, u4], axis=0)
+        
+        # compute bracket coefficients with known constraint distribution
+        def compute_c(self, type, v: torch.Tensor, t: torch.Tensor):
+            if type == 'SE(2)':
+                c1 = v[0]
+                c2 = v[1]
+                c3 = v[2] - self.R * torch.cos(self.phi(t)) * v[0] + self.y(t) * v[1]
+                c4 = v[3] - self.R * torch.sin(self.phi(t)) * v[0] - self.x(t) * v[1]
+                return torch.cat([c1, c2, c3, c4], axis=0)
 
         def plot(self) -> None:
             x = torch.arange(-5, 5, 0.1)
