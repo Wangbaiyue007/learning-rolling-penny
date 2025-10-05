@@ -2,8 +2,9 @@ import torch
 import matplotlib.pyplot as plt 
 import numpy as np
 
-class InfGenerator:
+class InfGenerator(torch.nn.Module):
     def __init__(self, type = 'SE(2)') -> None:
+        super(InfGenerator, self).__init__()
         self.type = type
         self.sys = self.EquationsOfMotion()
 
@@ -29,19 +30,26 @@ class InfGenerator:
         elif self.type == 'S1xR2':
             return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]]).repeat(N,1,1).reshape(N,3,3)
         
+    def forward(self, t, p):
+        self.sys.evaluate(t)
+        return self.sys.p_dot(p, self.type)
+        
+        
     class EquationsOfMotion:
 
         def __init__(self, 
-                    Omega: torch.double = 1,
-                    omega: torch.double = 3,
-                    R: torch.double = 3,
-                    phi_0: torch.double = 0,
-                    x_0: torch.double = 0,
-                    y_0: torch.double = 0,
-                    I: torch.double = 1,
-                    J: torch.double = 1,
-                    m: torch.double = 1) -> None:
+                    Omega: float = 1,
+                    omega: float = 3,
+                    R: float = 3,
+                    phi_0: float = 0,
+                    x_0: float = 0,
+                    y_0: float = 0,
+                    I: float = 1,
+                    J: float = 1,
+                    m: float = 1,
+                    t: torch.Tensor = torch.tensor([0.])) -> None:
 
+            # system parameters
             self.Omega = Omega
             self.omega = omega
             self.R = R
@@ -52,34 +60,31 @@ class InfGenerator:
             self.J = J
             self.m = m
 
-            # precompute trajectory
-            t_pre = torch.arange(0., 20, 0.01)
-            self.N_pre = t_pre.size(dim=0)
-            t = t.view(1, self.N_pre)
-            self.theta_pre = self.theta(t_pre)
-            self.theta_dot_pre = self.theta_dot(t_pre)
-            self.phi_pre = self.phi(t_pre)
-            self.phi_dot_pre = self.phi_dot(t_pre)
-            self.x_pre = self.x(t_pre)
-            self.x_dot_pre = self.x_dot(t_pre)
-            self.y_pre = self.y(t_pre)
-            self.y_dot_pre = self.y_dot(t_pre)
-            self.omega_pre = self.Omega_a('SE(2)')
+            # state at time t
+            self.theta_ = self.theta(t, True)
+            self.theta_dot_ = self.theta_dot(t)
+            self.phi_ = self.phi(t, True)
+            self.phi_dot_ = self.phi_dot(t)
+            self.x_ = self.x(t, True)
+            self.x_dot_ = self.x_dot(t)
+            self.y_ = self.y(t, True)
+            self.y_dot_ = self.y_dot(t)
+            self.Omega_a_ = self.Omega_a('SE(2)')
             # coordinates
-            self.u1 = self.u_alpha('SE(2)', t_pre)
-            self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)', t_pre)
+            self.u1 = self.u_alpha('SE(2)')
+            self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
             # coefficients
-            self.c_j_i = self.compute_c_j_i('SE(2)')
+            self.c_j_i = self.compute_c_j_i()
 
         '''
         Equations of motion for training
         '''
         def theta_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.Omega * torch.ones(1, t.size(dim=1))
+            return self.Omega * torch.ones(1, t.size(dim=0))
             # return torch.autograd.grad(self.theta(t), t, torch.ones_like(self.theta(t)), retain_graph=True, create_graph=True)[0]
 
         def phi_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.omega * torch.ones(1, t.size(dim=1))
+            return self.omega * torch.ones(1, t.size(dim=0))
             # return torch.autograd.grad(self.phi(t), t, torch.ones_like(self.phi(t)), retain_graph=True, create_graph=True)[0]
 
         def x_dot(self, t: torch.Tensor) -> torch.Tensor:
@@ -93,18 +98,30 @@ class InfGenerator:
         def q_dot(self, t: torch.Tensor) -> torch.Tensor:
             return torch.cat([self.theta_dot(t[0]), self.phi_dot(t[1]), self.x_dot(t[2]), self.y_dot(t[3])], axis=0)
 
-        def theta(self, t: torch.Tensor) -> torch.Tensor:
-            return self.Omega*t
+        def theta(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+            theta = self.Omega*t
+            if requires_grad:
+                theta.requires_grad_()
+            return theta
 
-        def phi(self, t: torch.Tensor) -> torch.Tensor:
-            return self.omega*t + self.phi_0
+        def phi(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+            phi = self.omega*t + self.phi_0
+            if requires_grad:
+                phi.requires_grad_()
+            return phi
 
-        def x(self, t: torch.Tensor) -> torch.Tensor:
-            return self.Omega/self.omega * self.R * torch.sin(self.omega*t + self.phi_0) + self.x_0
+        def x(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+            x = self.Omega/self.omega * self.R * torch.sin(self.omega*t + self.phi_0) + self.x_0
+            if requires_grad:
+                x.requires_grad_()
+            return x
 
-        def y(self, t: torch.Tensor) -> torch.Tensor:
-            return -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.y_0
-        
+        def y(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+            y = -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.y_0
+            if requires_grad:
+                y.requires_grad_()
+            return y
+
         def q(self, t: torch.Tensor) -> torch.Tensor:
             return torch.cat([self.theta(t[0]), self.phi(t[1]), self.x(t[2]), self.y(t[3])], axis=0)
 
@@ -117,24 +134,27 @@ class InfGenerator:
         ## 
         def u_alpha(self, type) -> torch.Tensor:
             """
-            Constraint distribution
+            Constraint distribution. Input a time scalar t.
             """
             if type == 'SE(2)':
-                u1 =  self.R*torch.cos(self.phi_pre).reshape(self.N_pre,1)*torch.tensor([0., 0., 1., 0.]) + \
-                      self.R*torch.sin(self.phi_pre).reshape(self.N_pre,1)*torch.tensor([0., 0., 0., 1.]) + \
-                      torch.tensor([1., 0., 0., 0.]).repeat(self.N_pre,1)
+                phi = self.phi_
+                u1 =  self.R*torch.cos(phi)*torch.tensor([0., 0., 1., 0.]) + \
+                      self.R*torch.sin(phi)*torch.tensor([0., 0., 0., 1.]) + \
+                      torch.tensor([1., 0., 0., 0.])
                 return u1
-        
+
         def u_sigma_a(self, type) -> torch.Tensor:
             """
             Lie algebra vector field
             """
             if type == 'SE(2)':
-                u2 = self.y_pre.reshape(self.N_pre,1)*torch.tensor([0., 0., -1., 0.]) + \
-                     self.x_pre.reshape(self.N_pre,1)*torch.tensor([0., 0., 0., 1.]) + \
-                     torch.tensor([0., 1., 0., 0.]).repeat(self.N_pre,1)
-                u3 = torch.tensor([0., 0., 1., 0.]).repeat(self.N_pre,1)
-                u4 = torch.tensor([0., 0., 0., 1.]).repeat(self.N_pre,1)
+                x = self.x_
+                y = self.y_
+                u2 = y*torch.tensor([0., 0., -1., 0.]) + \
+                     x*torch.tensor([0., 0., 0., 1.]) + \
+                     torch.tensor([0., 1., 0., 0.])
+                u3 = torch.tensor([0., 0., 1., 0.])
+                u4 = torch.tensor([0., 0., 0., 1.])
                 return u2, u3, u4
 
         def Omega_a(self, type) -> torch.Tensor:
@@ -142,10 +162,10 @@ class InfGenerator:
             Quasi-velocities
             """
             if type == 'SE(2)':
-                omega1 = self.theta_dot_pre
-                omega2 = self.phi_dot_pre
-                omega3 = - self.R*torch.cos(self.phi_pre)*self.theta_dot_pre + self.y_pre*self.phi_dot_pre
-                omega4 = - self.R*torch.sin(self.phi_pre)*self.theta_dot_pre - self.x_pre*self.phi_dot_pre
+                omega1 = self.theta_dot_
+                omega2 = self.phi_dot_
+                omega3 = - self.R*torch.cos(self.phi_)*self.theta_dot_ + self.y_*self.phi_dot_
+                omega4 = - self.R*torch.sin(self.phi_)*self.theta_dot_ - self.x_*self.phi_dot_
                 return torch.cat([omega1, omega2, omega3, omega4], axis=0)
 
         def p(self, type) -> torch.Tensor:
@@ -153,10 +173,10 @@ class InfGenerator:
             Momentum in body frame
             """
             if type == 'SE(2)':
-                p2 = self.J * self.phi_dot_pre - self.m * self.y_pre * self.x_dot_pre + self.m * self.x_pre * self.y_dot_pre
-                p3 = self.m * self.x_dot_pre
-                p4 = self.m * self.y_dot_pre
-                p1 = self.I * self.theta_dot_pre + self.R * (torch.cos(self.phi_pre) * p3 + torch.sin(self.phi_pre) * p4)
+                p2 = self.J * self.phi_dot_ - self.m * self.y_ * self.x_dot_ + self.m * self.x_ * self.y_dot_
+                p3 = self.m * self.x_dot_
+                p4 = self.m * self.y_dot_
+                p1 = self.I * self.theta_dot_ + self.R * (torch.cos(self.phi_) * p3 + torch.sin(self.phi_) * p4)
                 return torch.cat([p1, p2, p3, p4], axis=0)
             
         def p_dot(self, p:torch.Tensor, type) -> torch.Tensor:
@@ -178,35 +198,62 @@ class InfGenerator:
             c_3_4 = -c_4_3
 
             if type == 'SE(2)':
-                p1_dot = (c_2_1 * p) @ self.omega_pre[1] + \
-                         (c_3_1 * p) @ self.omega_pre[2] + \
-                         (c_4_1 * p) @ self.omega_pre[3]
-                p2_dot = (c_1_2 * p) @ self.omega_pre[0] + \
-                         (c_3_2 * p) @ self.omega_pre[2] + \
-                         (c_4_2 * p) @ self.omega_pre[3]
-                p3_dot = (c_1_3 * p) @ self.omega_pre[0] + \
-                         (c_2_3 * p) @ self.omega_pre[1] + \
-                         (c_4_3 * p) @ self.omega_pre[3]
-                p4_dot = (c_1_4 * p) @ self.omega_pre[0] + \
-                         (c_2_4 * p) @ self.omega_pre[1] + \
-                         (c_3_4 * p) @ self.omega_pre[2]
+                p1_dot = (c_2_1 * p) @ self.Omega_a_[1] + \
+                         (c_3_1 * p) @ self.Omega_a_[2] + \
+                         (c_4_1 * p) @ self.Omega_a_[3]
+                p2_dot = (c_1_2 * p) @ self.Omega_a_[0] + \
+                         (c_3_2 * p) @ self.Omega_a_[2] + \
+                         (c_4_2 * p) @ self.Omega_a_[3]
+                p3_dot = (c_1_3 * p) @ self.Omega_a_[0] + \
+                         (c_2_3 * p) @ self.Omega_a_[1] + \
+                         (c_4_3 * p) @ self.Omega_a_[3]
+                p4_dot = (c_1_4 * p) @ self.Omega_a_[0] + \
+                         (c_2_4 * p) @ self.Omega_a_[1] + \
+                         (c_3_4 * p) @ self.Omega_a_[2]
                 return torch.cat([p1_dot, p2_dot, p3_dot, p4_dot], axis=0)
+        
+        def evaluate(self, t: torch.Tensor) -> torch.Tensor:
+            # state at time t
+            self.theta_ = self.theta(t, True)
+            self.theta_dot_ = self.theta_dot(t)
+            self.phi_ = self.phi(t, True)
+            self.phi_dot_ = self.phi_dot(t)
+            self.x_ = self.x(t, True)
+            self.x_dot_ = self.x_dot(t)
+            self.y_ = self.y(t, True)
+            self.y_dot_ = self.y_dot(t)
+            self.Omega_a_ = self.Omega_a('SE(2)')
+            # coordinates
+            self.u1 = self.u_alpha('SE(2)')
+            self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
+            # coefficients
+            self.c_j_i = self.compute_c_j_i()
+            return
 
         ##
         ## Utils
         ##
+        def nan_to_num(self, x) -> torch.Tensor:
+            x_new = []
+            for i in range(len(x)):
+                if x[i] is None:
+                    x_new.append(torch.tensor(0.0))
+                else:
+                    x_new.append(x[i])
+            return torch.tensor(x_new)
+
         def bracket(self, g1: torch.Tensor, g2: torch.Tensor) -> torch.Tensor:
             """
             Lie bracket of two vector fields, assume g1 and g2 are functions of (theta, phi, x, y)
             """
-            u1 = g1[0] * (torch.autograd.grad(g2[0], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[0], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[0], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[0], self.y_pre)) \
-               - g2[0] * (torch.autograd.grad(g1[0], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[0], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[0], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[0], self.y_pre))
-            u2 = g1[0] * (torch.autograd.grad(g2[1], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[1], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[1], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[1], self.y_pre)) \
-               - g2[0] * (torch.autograd.grad(g1[1], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[1], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[1], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[1], self.y_pre))
-            u3 = g1[0] * (torch.autograd.grad(g2[2], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[2], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[2], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[2], self.y_pre)) \
-               - g2[0] * (torch.autograd.grad(g1[2], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[2], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[2], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[2], self.y_pre))
-            u4 = g1[0] * (torch.autograd.grad(g2[3], self.theta_pre)) + g1[1] * (torch.autograd.grad(g2[3], self.phi_pre)) + g1[2] * (torch.autograd.grad(g2[3], self.x_pre)) + g1[3] * (torch.autograd.grad(g2[3], self.y_pre)) \
-               - g2[0] * (torch.autograd.grad(g1[3], self.theta_pre)) - g2[1] * (torch.autograd.grad(g1[3], self.phi_pre)) - g2[2] * (torch.autograd.grad(g1[3], self.x_pre)) - g2[3] * (torch.autograd.grad(g1[3], self.y_pre))
+            u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+               - g2 * self.nan_to_num(torch.autograd.grad(g1[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+            u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+               - g2 * self.nan_to_num(torch.autograd.grad(g1[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+            u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+               - g2 * self.nan_to_num(torch.autograd.grad(g1[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+            u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+               - g2 * self.nan_to_num(torch.autograd.grad(g1[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
             return torch.cat([u1, u2, u3, u4], axis=0)
         
         def compute_c(self, type, v: torch.Tensor):
@@ -216,8 +263,8 @@ class InfGenerator:
             if type == 'SE(2)':
                 c1 = v[0]
                 c2 = v[1]
-                c3 = v[2] - self.R * torch.cos(self.phi_pre) * v[0] + self.y_pre * v[1]
-                c4 = v[3] - self.R * torch.sin(self.phi_pre) * v[0] - self.x_pre * v[1]
+                c3 = v[2] - self.R * torch.cos(self.phi_) * v[0] + self.y_ * v[1]
+                c4 = v[3] - self.R * torch.sin(self.phi_) * v[0] - self.x_ * v[1]
                 return torch.cat([c1, c2, c3, c4], axis=0)
         
         def compute_c_j_i(self):
@@ -233,10 +280,10 @@ class InfGenerator:
             c_2_3 = -c_3_2
             c_2_4 = -c_4_2
             c_3_4 = -c_4_3
-            c_i_1 = torch.cat([c_2_1, c_3_1, c_4_1], axis=0)
-            c_i_2 = torch.cat([c_1_2, c_3_2, c_4_2], axis=0)
-            c_i_3 = torch.cat([c_1_3, c_2_3, c_4_3], axis=0)
-            c_i_4 = torch.cat([c_1_4, c_2_4, c_3_4], axis=0)
+            c_i_1 = torch.stack([c_2_1, c_3_1, c_4_1], axis=0)
+            c_i_2 = torch.stack([c_1_2, c_3_2, c_4_2], axis=0)
+            c_i_3 = torch.stack([c_1_3, c_2_3, c_4_3], axis=0)
+            c_i_4 = torch.stack([c_1_4, c_2_4, c_3_4], axis=0)
             return torch.stack([c_i_1, c_i_2, c_i_3, c_i_4], axis=0)
 
         def plot(self) -> None:
