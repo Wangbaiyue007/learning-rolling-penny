@@ -74,17 +74,17 @@ class InfGenerator(torch.nn.Module):
             self.u1 = self.u_alpha('SE(2)')
             self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
             # coefficients
-            self.c_j_i = self.compute_c_j_i()
+            self.c_j_i = self.compute_c_j_i('SE(2)')
 
         '''
         Equations of motion for training
         '''
         def theta_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.Omega * torch.ones(1, t.size(dim=0))
+            return self.Omega * torch.ones(1)
             # return torch.autograd.grad(self.theta(t), t, torch.ones_like(self.theta(t)), retain_graph=True, create_graph=True)[0]
 
         def phi_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.omega * torch.ones(1, t.size(dim=0))
+            return self.omega * torch.ones(1)
             # return torch.autograd.grad(self.phi(t), t, torch.ones_like(self.phi(t)), retain_graph=True, create_graph=True)[0]
 
         def x_dot(self, t: torch.Tensor) -> torch.Tensor:
@@ -177,19 +177,18 @@ class InfGenerator(torch.nn.Module):
                 p3 = self.m * self.x_dot_
                 p4 = self.m * self.y_dot_
                 p1 = self.I * self.theta_dot_ + self.R * (torch.cos(self.phi_) * p3 + torch.sin(self.phi_) * p4)
-                return torch.cat([p1, p2, p3, p4], axis=0)
+                return torch.tensor([p1, p2, p3, p4])
             
         def p_dot(self, p:torch.Tensor, type) -> torch.Tensor:
             """
             Dynamics based on hamel's equations
             """
-
-            c_2_1 = self.c_j_i[0][1]
-            c_3_1 = self.c_j_i[0][2]
-            c_4_1 = self.c_j_i[0][3]
-            c_3_2 = self.c_j_i[1][2]
-            c_4_2 = self.c_j_i[1][3]
-            c_4_3 = self.c_j_i[2][3]
+            c_2_1 = self.c_j_i[0][0]
+            c_3_1 = self.c_j_i[0][1]
+            c_4_1 = self.c_j_i[0][2]
+            c_3_2 = self.c_j_i[1][1]
+            c_4_2 = self.c_j_i[1][2]
+            c_4_3 = self.c_j_i[2][2]
             c_1_2 = -c_2_1
             c_1_3 = -c_3_1
             c_1_4 = -c_4_1
@@ -198,19 +197,19 @@ class InfGenerator(torch.nn.Module):
             c_3_4 = -c_4_3
 
             if type == 'SE(2)':
-                p1_dot = (c_2_1 * p) @ self.Omega_a_[1] + \
-                         (c_3_1 * p) @ self.Omega_a_[2] + \
-                         (c_4_1 * p) @ self.Omega_a_[3]
-                p2_dot = (c_1_2 * p) @ self.Omega_a_[0] + \
-                         (c_3_2 * p) @ self.Omega_a_[2] + \
-                         (c_4_2 * p) @ self.Omega_a_[3]
-                p3_dot = (c_1_3 * p) @ self.Omega_a_[0] + \
-                         (c_2_3 * p) @ self.Omega_a_[1] + \
-                         (c_4_3 * p) @ self.Omega_a_[3]
-                p4_dot = (c_1_4 * p) @ self.Omega_a_[0] + \
-                         (c_2_4 * p) @ self.Omega_a_[1] + \
-                         (c_3_4 * p) @ self.Omega_a_[2]
-                return torch.cat([p1_dot, p2_dot, p3_dot, p4_dot], axis=0)
+                p1_dot = (c_2_1 @ p) * self.Omega_a_[1] + \
+                         (c_3_1 @ p) * self.Omega_a_[2] + \
+                         (c_4_1 @ p) * self.Omega_a_[3]
+                p2_dot = (c_1_2 @ p) * self.Omega_a_[0] + \
+                         (c_3_2 @ p) * self.Omega_a_[2] + \
+                         (c_4_2 @ p) * self.Omega_a_[3]
+                p3_dot = (c_1_3 @ p) * self.Omega_a_[0] + \
+                         (c_2_3 @ p) * self.Omega_a_[1] + \
+                         (c_4_3 @ p) * self.Omega_a_[3]
+                p4_dot = (c_1_4 @ p) * self.Omega_a_[0] + \
+                         (c_2_4 @ p) * self.Omega_a_[1] + \
+                         (c_3_4 @ p) * self.Omega_a_[2]
+                return torch.tensor([p1_dot, p2_dot, p3_dot, p4_dot])
         
         def evaluate(self, t: torch.Tensor) -> torch.Tensor:
             # state at time t
@@ -227,7 +226,7 @@ class InfGenerator(torch.nn.Module):
             self.u1 = self.u_alpha('SE(2)')
             self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
             # coefficients
-            self.c_j_i = self.compute_c_j_i()
+            self.c_j_i = self.compute_c_j_i('SE(2)')
             return
 
         ##
@@ -246,15 +245,32 @@ class InfGenerator(torch.nn.Module):
             """
             Lie bracket of two vector fields, assume g1 and g2 are functions of (theta, phi, x, y)
             """
-            u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
-               - g2 * self.nan_to_num(torch.autograd.grad(g1[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
-            u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
-               - g2 * self.nan_to_num(torch.autograd.grad(g1[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
-            u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
-               - g2 * self.nan_to_num(torch.autograd.grad(g1[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
-            u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
-               - g2 * self.nan_to_num(torch.autograd.grad(g1[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
-            return torch.cat([u1, u2, u3, u4], axis=0)
+            if g1.requires_grad and g2.requires_grad:
+                u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+                - g2 * self.nan_to_num(torch.autograd.grad(g1[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+                - g2 * self.nan_to_num(torch.autograd.grad(g1[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+                - g2 * self.nan_to_num(torch.autograd.grad(g1[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True)) \
+                - g2 * self.nan_to_num(torch.autograd.grad(g1[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+            elif g1.requires_grad and (not g2.requires_grad):
+                u1 = - g2 * self.nan_to_num(torch.autograd.grad(g1[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u2 = - g2 * self.nan_to_num(torch.autograd.grad(g1[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u3 = - g2 * self.nan_to_num(torch.autograd.grad(g1[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u4 = - g2 * self.nan_to_num(torch.autograd.grad(g1[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+            elif (not g1.requires_grad) and g2.requires_grad:
+                u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+                u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True))
+            else:
+                u1 = u2 = u3 = u4 = torch.zeros(4)
+            e1 = u1.sum()
+            e2 = u2.sum()
+            e3 = u3.sum()
+            e4 = u4.sum()
+            return torch.tensor([e1, e2, e3, e4])
         
         def compute_c(self, type, v: torch.Tensor):
             """
@@ -265,9 +281,9 @@ class InfGenerator(torch.nn.Module):
                 c2 = v[1]
                 c3 = v[2] - self.R * torch.cos(self.phi_) * v[0] + self.y_ * v[1]
                 c4 = v[3] - self.R * torch.sin(self.phi_) * v[0] - self.x_ * v[1]
-                return torch.cat([c1, c2, c3, c4], axis=0)
+                return torch.tensor([c1, c2, c3, c4])
         
-        def compute_c_j_i(self):
+        def compute_c_j_i(self, type):
             c_2_1 = self.compute_c(type, self.bracket(self.u2, self.u1))
             c_3_1 = self.compute_c(type, self.bracket(self.u3, self.u1))
             c_4_1 = self.compute_c(type, self.bracket(self.u4, self.u1))
