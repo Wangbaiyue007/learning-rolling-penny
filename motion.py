@@ -3,41 +3,21 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class InfGenerator(torch.nn.Module):
-    def __init__(self, type = 'SE(2)') -> None:
+    def __init__(self, type = 'SE(2)', nn=None) -> None:
         super(InfGenerator, self).__init__()
         self.type = type
-        self.sys = self.EquationsOfMotion()
+        self.net = nn
+        self.sys = self.EquationsOfMotion(nn=self.net)
 
-    def generator(self, t:torch.Tensor) -> torch.Tensor:
-        N = t.size(dim=2)
-        if self.type == 'SE(2)':
-            gen = self.sys.y(t[2]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [-1., 0., 0.], [0., 0., 0.]]) + \
-                    self.sys.x(t[3]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [1., 0., 0.]]) + \
-                    torch.tensor([[1., 0, 0], [0., 1., 0], [0., 0., 1.]]).repeat(N,1,1).reshape(N,3,3)
-            return gen
-            # return torch.tensor([[1., 0, 0], [-self.sys.y(t), 1., 0], [self.sys.x(t), 0, 1]])
-        elif self.type == 'S1xR2':
-            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]]).repeat(N,1,1).reshape(N,3,3)
-        
-    def generator_inv(self, t: torch.Tensor) -> torch.Tensor:
-        N = t.size(dim=2)
-        if self.type == 'SE(2)':
-            gen = self.sys.y(t[2]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [1., 0., 0.], [0., 0., 0.]]) + \
-                    self.sys.x(t[3]).reshape(N,1,1)*torch.tensor([[0., 0., 0.], [0., 0., 0.], [-1., 0., 0.]]) + \
-                    torch.tensor([[1., 0, 0], [0., 1., 0], [0., 0., 1.]]).repeat(N,1,1).reshape(N,3,3)
-            return gen
-            # return torch.tensor([[1., 0, 0], [-self.sys.y(t), 1., 0], [self.sys.x(t), 0, 1]])
-        elif self.type == 'S1xR2':
-            return torch.tensor([[1., 0, 0], [0, 1., 0], [0, 0, 1.]]).repeat(N,1,1).reshape(N,3,3)
-        
     def forward(self, t, p):
-        self.sys.evaluate(t)
+        self.sys.evaluate(t, nn=self.net)
         return self.sys.p_dot(p, self.type)
         
         
     class EquationsOfMotion:
 
         def __init__(self, 
+                    nn: torch.nn.Module = None,
                     Omega: float = 1,
                     omega: float = 3,
                     R: float = 3,
@@ -59,6 +39,7 @@ class InfGenerator(torch.nn.Module):
             self.I = I
             self.J = J
             self.m = m
+            self.nn = nn
 
             # state at time t
             self.theta_ = self.theta(t, True)
@@ -69,11 +50,14 @@ class InfGenerator(torch.nn.Module):
             self.x_dot_ = self.x_dot(t)
             self.y_ = self.y(t, True)
             self.y_dot_ = self.y_dot(t)
-            self.Omega_a_ = self.Omega_a('SE(2)')
+            self.q_ = self.q()
+
             # coordinates
-            self.u1 = self.u_alpha('SE(2)')
+            self.u1 = self.u_alpha('SE(2)', nn)
             self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
+
             # coefficients
+            self.Omega_a_ = self.Omega_a('SE(2)')
             self.c_j_i = self.compute_c_j_i('SE(2)')
 
         '''
@@ -122,8 +106,8 @@ class InfGenerator(torch.nn.Module):
                 y.requires_grad_()
             return y
 
-        def q(self, t: torch.Tensor) -> torch.Tensor:
-            return torch.cat([self.theta(t[0]), self.phi(t[1]), self.x(t[2]), self.y(t[3])], axis=0)
+        def q(self) -> torch.Tensor:
+            return torch.tensor([self.theta_, self.phi_, self.x_, self.y_])
 
         def dL_dqdot(self, t:torch.Tensor) -> torch.Tensor:
             return torch.cat([self.I * self.theta_dot(t[0]), self.J * self.phi_dot(t[1]), self.m * self.x_dot(t[2]), self.m * self.y_dot(t[3])], axis=0)
@@ -132,15 +116,22 @@ class InfGenerator(torch.nn.Module):
         ## 
         ## Hamel's formulation
         ## 
-        def u_alpha(self, type) -> torch.Tensor:
+        def u_alpha(self, type, nn: torch.nn.Module = None) -> torch.Tensor:
             """
             Constraint distribution. Input a time scalar t.
             """
             if type == 'SE(2)':
                 phi = self.phi_
-                u1 =  self.R*torch.cos(phi)*torch.tensor([0., 0., 1., 0.]) + \
-                      self.R*torch.sin(phi)*torch.tensor([0., 0., 0., 1.]) + \
-                      torch.tensor([1., 0., 0., 0.])
+                if nn is None:
+                    u1 =  self.R*torch.cos(phi)*torch.tensor([0., 0., 1., 0.]) + \
+                        self.R*torch.sin(phi)*torch.tensor([0., 0., 0., 1.]) + \
+                        torch.tensor([1., 0., 0., 0.])
+                else:
+                    A_learned = nn(self.q_)
+                    u1 =  torch.tensor([1., 0., 0., 0.]) + \
+                        - A_learned[0]*torch.tensor([0., 1., 0., 0.]) + \
+                        - A_learned[1]*torch.tensor([0., 0., 1., 0.]) + \
+                        - A_learned[2]*torch.tensor([0., 0., 0., 1.])
                 return u1
 
         def u_sigma_a(self, type) -> torch.Tensor:
@@ -162,11 +153,11 @@ class InfGenerator(torch.nn.Module):
             Quasi-velocities
             """
             if type == 'SE(2)':
-                omega1 = self.theta_dot_
-                omega2 = self.phi_dot_
-                omega3 = - self.R*torch.cos(self.phi_)*self.theta_dot_ + self.y_*self.phi_dot_
-                omega4 = - self.R*torch.sin(self.phi_)*self.theta_dot_ - self.x_*self.phi_dot_
-                return torch.cat([omega1, omega2, omega3, omega4], axis=0)
+                omega1 = self.phi_dot_
+                omega2 = self.u1[0]*self.theta_dot_ + self.phi_dot_
+                omega3 = self.u1[1]*self.theta_dot_ + (self.y_*self.phi_dot_ + self.x_dot_)
+                omega4 = self.u1[2]*self.theta_dot_ + (-self.x_*self.phi_dot_ + self.y_dot_)
+                return torch.tensor([omega1, omega2, omega3, omega4])
 
         def p(self, type) -> torch.Tensor:
             """
@@ -176,7 +167,7 @@ class InfGenerator(torch.nn.Module):
                 p2 = self.J * self.phi_dot_ - self.m * self.y_ * self.x_dot_ + self.m * self.x_ * self.y_dot_
                 p3 = self.m * self.x_dot_
                 p4 = self.m * self.y_dot_
-                p1 = self.I * self.theta_dot_ + self.R * (torch.cos(self.phi_) * p3 + torch.sin(self.phi_) * p4)
+                p1 = self.I * self.theta_dot_ - self.u1[1:4] @ torch.tensor([p2, p3, p4])
                 return torch.tensor([p1, p2, p3, p4])
             
         def p_dot(self, p:torch.Tensor, type) -> torch.Tensor:
@@ -210,8 +201,8 @@ class InfGenerator(torch.nn.Module):
                          (c_2_4 @ p) * self.Omega_a_[1] + \
                          (c_3_4 @ p) * self.Omega_a_[2]
                 return torch.tensor([p1_dot, p2_dot, p3_dot, p4_dot])
-        
-        def evaluate(self, t: torch.Tensor) -> torch.Tensor:
+
+        def evaluate(self, t: torch.Tensor, nn: torch.nn.Module=None) -> torch.Tensor:
             # state at time t
             self.theta_ = self.theta(t, True)
             self.theta_dot_ = self.theta_dot(t)
@@ -221,11 +212,14 @@ class InfGenerator(torch.nn.Module):
             self.x_dot_ = self.x_dot(t)
             self.y_ = self.y(t, True)
             self.y_dot_ = self.y_dot(t)
-            self.Omega_a_ = self.Omega_a('SE(2)')
+            self.q_ = self.q()
+
             # coordinates
-            self.u1 = self.u_alpha('SE(2)')
+            self.u1 = self.u_alpha('SE(2)', nn=nn)
             self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
+
             # coefficients
+            self.Omega_a_ = self.Omega_a('SE(2)')
             self.c_j_i = self.compute_c_j_i('SE(2)')
             return
 

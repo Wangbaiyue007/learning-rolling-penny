@@ -11,25 +11,67 @@ def makedirs(dirname):
 
 makedirs('png')
 fig = plt.figure(figsize=(12, 4), facecolor='white')
-ax_traj = fig.add_subplot(111, frameon=False)
+ax_traj = fig.add_subplot(121, frameon=False)
+ax_A = fig.add_subplot(122, frameon=False)
 # ax_phase = fig.add_subplot(132, frameon=False)
 # ax_vecfield = fig.add_subplot(133, frameon=False)
 plt.show(block=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 t = torch.arange(0., 20, 0.01).to(device)
+opts = {
+    'data_size': t.size(0),
+    'batch_time': 3,
+    'batch_size': 1
+}
 
-def visualize(true_y, odefunc, itr):
+network = torch.nn.Sequential(
+            torch.nn.Linear(4, 32),
+            torch.nn.Tanh(),
+            torch.nn.Linear(32, 32),
+            torch.nn.Tanh(),
+            torch.nn.Linear(32, 3),
+        ).to(device)
+for m in network.modules():
+    if isinstance(m, torch.nn.Linear):
+        torch.nn.init.normal_(m.weight, mean=0, std=0.1)
+        torch.nn.init.constant_(m.bias, val=0)
+
+def get_batch(true_y, options):
+    s = torch.from_numpy(np.random.choice(np.arange(options['data_size'] - options['batch_time'], dtype=np.int64), options['batch_size'], replace=False))
+    batch_y0 = true_y[s]  # (M, D)
+    batch_t = t[:options['batch_time']]  # (T)
+    batch_y = torch.stack([true_y[s + i] for i in range(options['batch_time'])], dim=0)  # (T, M, D)
+    return batch_y0.to(device), batch_t.to(device), batch_y.to(device)
+
+def visualize(true_p, pred_p, A, odefunc, itr):
 
     ax_traj.cla()
     ax_traj.set_title('p1 to p4 vs t')
     ax_traj.set_xlabel('t')
     ax_traj.set_ylabel('p')
-    ax_traj.plot(t.cpu().numpy(), true_y.cpu().numpy()[:, 0], t.cpu().numpy(), true_y.cpu().numpy()[:, 1], t.cpu().numpy(), true_y.cpu().numpy()[:, 2], t.cpu().numpy(), true_y.cpu().numpy()[:, 3], 'g-')
-    # ax_traj.plot(t.cpu().numpy(), pred_y.cpu().numpy()[:, 0, 0], '--', t.cpu().numpy(), pred_y.cpu().numpy()[:, 0, 1], 'b--')
+    ax_traj.plot(
+        t.cpu().numpy(), true_p.cpu().numpy()[:, 0], 'g-', 
+        t.cpu().numpy(), true_p.cpu().numpy()[:, 1], 'b-', 
+        t.cpu().numpy(), true_p.cpu().numpy()[:, 2], 'r-', 
+        t.cpu().numpy(), true_p.cpu().numpy()[:, 3], 'y-')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 0], color='grey', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 1], color='grey', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 2], color='grey', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 3], color='grey', linestyle='--')
     ax_traj.set_xlim(t.cpu().min(), t.cpu().max())
     # ax_traj.set_ylim(-2, 2)
     ax_traj.legend()
+
+    ax_A.cla()
+    ax_A.set_title('A1 to A3 vs t')
+    ax_A.set_xlabel('t')
+    ax_A.set_ylabel('A')
+    ax_A.plot(t.cpu().numpy(), A.detach().numpy()[:, 0], 'g-')
+    ax_A.plot(t.cpu().numpy(), A.detach().numpy()[:, 1], 'b-')
+    ax_A.plot(t.cpu().numpy(), A.detach().numpy()[:, 2], 'r-')
+    ax_A.set_xlim(t.cpu().min(), t.cpu().max())
+    ax_A.legend()
 
     # ax_phase.cla()
     # ax_phase.set_title('Phase Portrait')
@@ -63,7 +105,27 @@ def visualize(true_y, odefunc, itr):
 
 if __name__ == "__main__":
     t = torch.arange(0., 20, 0.01).to(device)
-    inf_gen = InfGenerator().to(device)
-    p0 = inf_gen.sys.p('SE(2)')
-    true_p = odeint(inf_gen, p0, t)
-    visualize(true_p, inf_gen, 0)
+    dynamics_true = InfGenerator().to(device)
+    dynamics_param = InfGenerator(nn=network).to(device)
+    optimizer = torch.optim.RMSprop(dynamics_param.parameters(), lr=1e-3)
+
+    p0 = dynamics_true.sys.p('SE(2)')
+    true_p = odeint(dynamics_true, p0, t)
+
+    for itr in range(1, 2001):
+        optimizer.zero_grad()
+        batch_p0, batch_t, batch_p = get_batch(true_p, opts)
+        pred_p = odeint(dynamics_param, batch_p0[0], batch_t)
+        loss = torch.mean(torch.abs(pred_p - batch_p))
+        loss.backward()
+        optimizer.step()
+
+        if itr % 100 == 0:
+            with torch.no_grad():
+                pred_p = odeint(dynamics_param, p0, t)
+                A = dynamics_param.net(true_p)
+                print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
+                # visualize(true_p, pred_p, A, dynamics_param, itr)
+    pred_p = odeint(dynamics_param, p0, t)
+    A = dynamics_param.net(true_p)
+    visualize(true_p, pred_p, A, dynamics_true, 0)
