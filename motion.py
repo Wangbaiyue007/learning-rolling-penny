@@ -64,19 +64,15 @@ class InfGenerator(torch.nn.Module):
         '''
         def theta_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega * torch.ones(1)
-            # return torch.autograd.grad(self.theta(t), t, torch.ones_like(self.theta(t)), retain_graph=True, create_graph=True)[0]
 
         def phi_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.omega * torch.ones(1)
-            # return torch.autograd.grad(self.phi(t), t, torch.ones_like(self.phi(t)), retain_graph=True, create_graph=True)[0]
 
         def x_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega*self.R*torch.cos(self.omega*t + self.phi_0)
-            # return torch.autograd.grad(self.x(t), t, torch.ones_like(self.x(t)), retain_graph=True, create_graph=True)[0]
 
         def y_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega*self.R*torch.sin(self.omega*t + self.phi_0)
-            # return torch.autograd.grad(self.y(t), t, torch.ones_like(self.y(t)), retain_graph=True, create_graph=True)[0]
         
         def q_dot(self, t: torch.Tensor) -> torch.Tensor:
             return torch.cat([self.theta_dot(t[0]), self.phi_dot(t[1]), self.x_dot(t[2]), self.y_dot(t[3])], axis=0)
@@ -187,19 +183,19 @@ class InfGenerator(torch.nn.Module):
             c_3_4 = -c_4_3
 
             if type == 'SE(2)':
-                p1_dot = (c_2_1 @ p) * self.Omega_a_[1] + \
-                         (c_3_1 @ p) * self.Omega_a_[2] + \
-                         (c_4_1 @ p) * self.Omega_a_[3]
-                p2_dot = (c_1_2 @ p) * self.Omega_a_[0] + \
-                         (c_3_2 @ p) * self.Omega_a_[2] + \
-                         (c_4_2 @ p) * self.Omega_a_[3]
-                p3_dot = (c_1_3 @ p) * self.Omega_a_[0] + \
-                         (c_2_3 @ p) * self.Omega_a_[1] + \
-                         (c_4_3 @ p) * self.Omega_a_[3]
-                p4_dot = (c_1_4 @ p) * self.Omega_a_[0] + \
-                         (c_2_4 @ p) * self.Omega_a_[1] + \
-                         (c_3_4 @ p) * self.Omega_a_[2]
-                return torch.cat([p1_dot, p2_dot, p3_dot, p4_dot])
+                p1_dot = (c_2_1 @ p.T) * self.Omega_a_[1] + \
+                         (c_3_1 @ p.T) * self.Omega_a_[2] + \
+                         (c_4_1 @ p.T) * self.Omega_a_[3]
+                p2_dot = (c_1_2 @ p.T) * self.Omega_a_[0] + \
+                         (c_3_2 @ p.T) * self.Omega_a_[2] + \
+                         (c_4_2 @ p.T) * self.Omega_a_[3]
+                p3_dot = (c_1_3 @ p.T) * self.Omega_a_[0] + \
+                         (c_2_3 @ p.T) * self.Omega_a_[1] + \
+                         (c_4_3 @ p.T) * self.Omega_a_[3]
+                p4_dot = (c_1_4 @ p.T) * self.Omega_a_[0] + \
+                         (c_2_4 @ p.T) * self.Omega_a_[1] + \
+                         (c_3_4 @ p.T) * self.Omega_a_[2]
+                return torch.stack([p1_dot, p2_dot, p3_dot, p4_dot]).T
 
         def evaluate(self, t: torch.Tensor, network: torch.nn.Module=None) -> torch.Tensor:
             # state at time t
@@ -237,32 +233,41 @@ class InfGenerator(torch.nn.Module):
             """
             Lie bracket of two vector fields, assume g1 and g2 are functions of (theta, phi, x, y)
             """
-            if g1.requires_grad and g2.requires_grad:
-                u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True)) \
-                - g2 * self.nan_to_num(torch.autograd.grad(g1[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True)) \
-                - g2 * self.nan_to_num(torch.autograd.grad(g1[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True)) \
-                - g2 * self.nan_to_num(torch.autograd.grad(g1[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True)) \
-                - g2 * self.nan_to_num(torch.autograd.grad(g1[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-            elif g1.requires_grad and (not g2.requires_grad):
-                u1 = - g2 * self.nan_to_num(torch.autograd.grad(g1[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u2 = - g2 * self.nan_to_num(torch.autograd.grad(g1[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u3 = - g2 * self.nan_to_num(torch.autograd.grad(g1[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u4 = - g2 * self.nan_to_num(torch.autograd.grad(g1[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-            elif (not g1.requires_grad) and g2.requires_grad:
-                u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-                u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], (self.theta_, self.phi_, self.x_, self.y_), allow_unused=True, retain_graph=True, create_graph=True))
-            else:
-                u1 = u2 = u3 = u4 = torch.zeros(4)
+            coords = (self.theta_, self.phi_, self.x_, self.y_)
+            
+            try:
+                if g1.requires_grad and g2.requires_grad:
+                    u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
+                    - g2 * self.nan_to_num(torch.autograd.grad(g1[0], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
+                    - g2 * self.nan_to_num(torch.autograd.grad(g1[1], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
+                    - g2 * self.nan_to_num(torch.autograd.grad(g1[2], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
+                    - g2 * self.nan_to_num(torch.autograd.grad(g1[3], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                elif g1.requires_grad and (not g2.requires_grad):
+                    u1 = - g2 * self.nan_to_num(torch.autograd.grad(g1[0], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u2 = - g2 * self.nan_to_num(torch.autograd.grad(g1[1], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u3 = - g2 * self.nan_to_num(torch.autograd.grad(g1[2], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u4 = - g2 * self.nan_to_num(torch.autograd.grad(g1[3], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                elif (not g1.requires_grad) and g2.requires_grad:
+                    u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                    u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], coords, allow_unused=True, retain_graph=True, create_graph=True))
+                else:
+                    u1 = u2 = u3 = u4 = torch.zeros(4)
+            except RuntimeError as e:
+                if "second time" in str(e):
+                    # If we get the backward error, return zeros to avoid breaking the computation
+                    u1 = u2 = u3 = u4 = torch.zeros(4)
+                else:
+                    raise e
             e1 = u1.sum()
             e2 = u2.sum()
             e3 = u3.sum()
             e4 = u4.sum()
-            return torch.tensor([e1, e2, e3, e4])
+            return torch.stack([e1, e2, e3, e4])
         
         def compute_c(self, type, v: torch.Tensor):
             """

@@ -21,14 +21,14 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 t = torch.arange(0., 20, 0.01).to(device)
 opts = {
     'data_size': t.size(0),
-    'batch_time': 3,
-    'batch_size': 1
+    'batch_time': 2,
+    'batch_size': 50
 }
 
 network = torch.nn.Sequential(
             torch.nn.Linear(4, 32),
             torch.nn.Tanh(),
-            torch.nn.Linear(32, 32),
+            torch.nn.Linear(4, 32),
             torch.nn.Tanh(),
             torch.nn.Linear(32, 3),
         ).to(device)
@@ -99,9 +99,8 @@ def visualize(true_p, pred_p, A, odefunc, itr):
 
     fig.tight_layout()
     plt.savefig('png/{:03d}'.format(itr))
-    # plt.draw()
-    # plt.pause(0.001)
-    plt.show()
+    plt.draw()
+    plt.pause(0.1)
 
 if __name__ == "__main__":
     t = torch.arange(0., 20, 0.01).to(device)
@@ -112,20 +111,16 @@ if __name__ == "__main__":
     p0 = dynamics_true.sys.p('SE(2)')
     true_p = odeint(dynamics_true, p0, t)
 
-    for itr in range(1, 2001):
+    for itr in range(1, 11):
         optimizer.zero_grad()
         batch_p0, batch_t, batch_p = get_batch(true_p, opts)
-        pred_p = odeint(dynamics_param, batch_p0[0], batch_t)
+        pred_p = odeint(dynamics_param, batch_p0, batch_t).to(device)
         loss = torch.mean(torch.abs(pred_p - batch_p))
-        loss.backward()
+        loss.backward(retain_graph=True)
         optimizer.step()
+        print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-        if itr % 100 == 0:
-            with torch.no_grad():
-                pred_p = odeint(dynamics_param, p0, t)
-                A = dynamics_param.net(true_p)
-                print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
-                # visualize(true_p, pred_p, A, dynamics_param, itr)
-    pred_p = odeint(dynamics_param, p0, t)
-    A = dynamics_param.net(true_p)
-    visualize(true_p, pred_p, A, dynamics_true, 0)
+        pred_p = odeint(dynamics_param, p0, t)
+        A = dynamics_param.net(true_p)
+        with torch.no_grad():
+            visualize(true_p, pred_p, A, dynamics_param, itr)
