@@ -1,6 +1,6 @@
 from motion import InfGenerator
 import torch
-from torchdiffeq import odeint
+from torchdiffeq import odeint_adjoint as odeint
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -18,23 +18,23 @@ ax_A = fig.add_subplot(122, frameon=False)
 plt.show(block=False)
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+torch.set_default_device('cuda:0')
+torch.set_default_tensor_type('torch.cuda.FloatTensor')
 t = torch.arange(0., 20, 0.01).to(device)
 opts = {
     'data_size': t.size(0),
     'batch_time': 2,
-    'batch_size': 50
+    'batch_size': 20
 }
 
 network = torch.nn.Sequential(
-            torch.nn.Linear(4, 32),
+            torch.nn.Linear(4, 20),
             torch.nn.Tanh(),
-            torch.nn.Linear(4, 32),
-            torch.nn.Tanh(),
-            torch.nn.Linear(32, 3),
+            torch.nn.Linear(20, 3),
         ).to(device)
 for m in network.modules():
     if isinstance(m, torch.nn.Linear):
-        torch.nn.init.normal_(m.weight, mean=0, std=0.1)
+        torch.nn.init.normal_(m.weight, mean=0, std=1)
         torch.nn.init.constant_(m.bias, val=0)
 
 def get_batch(true_y, options):
@@ -44,17 +44,16 @@ def get_batch(true_y, options):
     batch_y = torch.stack([true_y[s + i] for i in range(options['batch_time'])], dim=0)  # (T, M, D)
     return batch_y0.to(device), batch_t.to(device), batch_y.to(device)
 
-def visualize(true_p, pred_p, A, odefunc, itr):
+def visualize(true_p, pred_p, true_A, pred_A, odefunc, itr):
 
     ax_traj.cla()
     ax_traj.set_title('p1 to p4 vs t')
     ax_traj.set_xlabel('t')
     ax_traj.set_ylabel('p')
-    ax_traj.plot(
-        t.cpu().numpy(), true_p.cpu().numpy()[:, 0], 'g-', 
-        t.cpu().numpy(), true_p.cpu().numpy()[:, 1], 'b-', 
-        t.cpu().numpy(), true_p.cpu().numpy()[:, 2], 'r-', 
-        t.cpu().numpy(), true_p.cpu().numpy()[:, 3], 'y-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 0], 'g-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 1], 'b-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 2], 'r-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 3], 'y-')
     ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 0], color='grey', linestyle='--')
     ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 1], color='grey', linestyle='--')
     ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 2], color='grey', linestyle='--')
@@ -67,9 +66,12 @@ def visualize(true_p, pred_p, A, odefunc, itr):
     ax_A.set_title('A1 to A3 vs t')
     ax_A.set_xlabel('t')
     ax_A.set_ylabel('A')
-    ax_A.plot(t.cpu().numpy(), A.detach().numpy()[:, 0], 'g-')
-    ax_A.plot(t.cpu().numpy(), A.detach().numpy()[:, 1], 'b-')
-    ax_A.plot(t.cpu().numpy(), A.detach().numpy()[:, 2], 'r-')
+    ax_A.plot(t.cpu().numpy(), true_A.cpu().numpy()[:, 0], 'g-')
+    ax_A.plot(t.cpu().numpy(), true_A.cpu().numpy()[:, 1], 'b-')
+    ax_A.plot(t.cpu().numpy(), true_A.cpu().numpy()[:, 2], 'r-')
+    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 0], color='grey', linestyle='--')
+    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 1], color='grey', linestyle='--')
+    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 2], color='grey', linestyle='--')
     ax_A.set_xlim(t.cpu().min(), t.cpu().max())
     ax_A.legend()
 
@@ -109,7 +111,11 @@ if __name__ == "__main__":
     optimizer = torch.optim.RMSprop(dynamics_param.parameters(), lr=1e-3)
 
     p0 = dynamics_true.sys.p('SE(2)')
-    true_p = odeint(dynamics_true, p0, t)
+    true_p = odeint(dynamics_true, p0, t).to(device)
+    true_A = torch.zeros((t.size(0), 3)).to(device)
+    for i in range(t.size(0)):
+        dynamics_true.sys.evaluate(t[i])
+        true_A[i] = dynamics_true.sys.u1[1:4]
 
     for itr in range(1, 11):
         optimizer.zero_grad()
@@ -121,6 +127,6 @@ if __name__ == "__main__":
         print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
         pred_p = odeint(dynamics_param, p0, t)
-        A = dynamics_param.net(true_p)
+        pred_A = dynamics_param.net(true_p)
         with torch.no_grad():
-            visualize(true_p, pred_p, A, dynamics_param, itr)
+            visualize(true_p, pred_p, true_A, pred_A, dynamics_param, itr)

@@ -2,6 +2,8 @@ import torch
 import matplotlib.pyplot as plt 
 import numpy as np
 
+
+
 class InfGenerator(torch.nn.Module):
     def __init__(self, type = 'SE(2)', nn=None) -> None:
         super(InfGenerator, self).__init__()
@@ -27,7 +29,9 @@ class InfGenerator(torch.nn.Module):
                     I: float = 1,
                     J: float = 1,
                     m: float = 1,
-                    t: torch.Tensor = torch.tensor(0.)) -> None:
+                    t: torch.Tensor = torch.tensor(0.).to(torch.device("cuda:0"))) -> None:
+            
+            self.nn = nn
 
             # system parameters
             self.Omega = Omega
@@ -52,7 +56,7 @@ class InfGenerator(torch.nn.Module):
             self.q_ = self.q()
 
             # coordinates
-            self.u1 = self.u_alpha('SE(2)', nn)
+            self.u1 = self.u_alpha('SE(2)', self.q_)
             self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
 
             # coefficients
@@ -111,59 +115,56 @@ class InfGenerator(torch.nn.Module):
         ## 
         ## Hamel's formulation
         ## 
-        def u_alpha(self, type, nn: torch.nn.Module = None) -> torch.Tensor:
+        def u_alpha(self, q) -> torch.Tensor:
             """
             Constraint distribution. Input a time scalar t.
             """
-            if type == 'SE(2)':
-                phi = self.phi_
-                if nn is None:
-                    u1 =  self.R*torch.cos(phi)*torch.tensor([0., 0., 1., 0.]) + \
-                        self.R*torch.sin(phi)*torch.tensor([0., 0., 0., 1.]) + \
-                        torch.tensor([1., 0., 0., 0.])
-                else:
-                    A_learned = nn(self.q_)
-                    u1 =  torch.tensor([1., 0., 0., 0.]) + \
-                        - A_learned[0]*torch.tensor([0., 1., 0., 0.]) + \
-                        - A_learned[1]*torch.tensor([0., 0., 1., 0.]) + \
-                        - A_learned[2]*torch.tensor([0., 0., 0., 1.])
-                return u1
+            phi = self.phi_
+            if self.nn is None:
+                u1 =  self.R*torch.cos(phi)*torch.tensor([0., 0., 1., 0.]) + \
+                    self.R*torch.sin(phi)*torch.tensor([0., 0., 0., 1.]) + \
+                    torch.tensor([1., 0., 0., 0.])
+            else:
+                A_learned = self.nn(q)
+                u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device) + \
+                    - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device) + \
+                    - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device) + \
+                    - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device)
+            return u1
+        
 
-        def u_sigma_a(self, type) -> torch.Tensor:
+        def u_sigma_a(self, q) -> torch.Tensor:
             """
             Lie algebra vector field
             """
-            if type == 'SE(2)':
-                x = self.x_
-                y = self.y_
-                u2 = y*torch.tensor([0., 0., -1., 0.]) + \
-                     x*torch.tensor([0., 0., 0., 1.]) + \
-                     torch.tensor([0., 1., 0., 0.])
-                u3 = torch.tensor([0., 0., 1., 0.])
-                u4 = torch.tensor([0., 0., 0., 1.])
-                return u2, u3, u4
+            x = q[2]
+            y = q[3]
+            u2 = y*torch.tensor([0., 0., -1., 0.], device=y.device) + \
+                    x*torch.tensor([0., 0., 0., 1.], device=y.device) + \
+                    torch.tensor([0., 1., 0., 0.], device=y.device)
+            u3 = torch.tensor([0., 0., 1., 0.], device=y.device)
+            u4 = torch.tensor([0., 0., 0., 1.], device=y.device)
+            return u2, u3, u4
 
         def Omega_a(self, type) -> torch.Tensor:
             """
             Quasi-velocities
             """
-            if type == 'SE(2)':
-                omega1 = self.phi_dot_
-                omega2 = self.u1[1]*self.theta_dot_ + self.phi_dot_
-                omega3 = self.u1[2]*self.theta_dot_ + (self.y_*self.phi_dot_ + self.x_dot_)
-                omega4 = self.u1[3]*self.theta_dot_ + (-self.x_*self.phi_dot_ + self.y_dot_)
-                return torch.cat([omega1, omega2, omega3, omega4])
+            omega1 = self.phi_dot_
+            omega2 = self.u1[1]*self.theta_dot_ + self.phi_dot_
+            omega3 = self.u1[2]*self.theta_dot_ + (self.y_*self.phi_dot_ + self.x_dot_)
+            omega4 = self.u1[3]*self.theta_dot_ + (-self.x_*self.phi_dot_ + self.y_dot_)
+            return torch.cat([omega1, omega2, omega3, omega4])
 
         def p(self, type) -> torch.Tensor:
             """
             Momentum in body frame
             """
-            if type == 'SE(2)':
-                p2 = self.J * self.phi_dot_ - self.m * self.y_ * self.x_dot_ + self.m * self.x_ * self.y_dot_
-                p3 = self.m * self.x_dot_
-                p4 = self.m * self.y_dot_
-                p1 = self.I * self.theta_dot_ - self.u1[1:4] @ torch.tensor([p2, p3, p4])
-                return torch.stack([p1[0], p2[0], p3, p4])
+            p2 = self.J * self.phi_dot_ - self.m * self.y_ * self.x_dot_ + self.m * self.x_ * self.y_dot_
+            p3 = self.m * self.x_dot_
+            p4 = self.m * self.y_dot_
+            p1 = self.I * self.theta_dot_ - self.u1[1:4] @ torch.tensor([p2, p3, p4])
+            return torch.stack([p1[0], p2[0], p3, p4])
             
         def p_dot(self, p:torch.Tensor, type) -> torch.Tensor:
             """
@@ -182,35 +183,34 @@ class InfGenerator(torch.nn.Module):
             c_2_4 = -c_4_2
             c_3_4 = -c_4_3
 
-            if type == 'SE(2)':
-                p1_dot = (c_2_1 @ p.T) * self.Omega_a_[1] + \
-                         (c_3_1 @ p.T) * self.Omega_a_[2] + \
-                         (c_4_1 @ p.T) * self.Omega_a_[3]
-                p2_dot = (c_1_2 @ p.T) * self.Omega_a_[0] + \
-                         (c_3_2 @ p.T) * self.Omega_a_[2] + \
-                         (c_4_2 @ p.T) * self.Omega_a_[3]
-                p3_dot = (c_1_3 @ p.T) * self.Omega_a_[0] + \
-                         (c_2_3 @ p.T) * self.Omega_a_[1] + \
-                         (c_4_3 @ p.T) * self.Omega_a_[3]
-                p4_dot = (c_1_4 @ p.T) * self.Omega_a_[0] + \
-                         (c_2_4 @ p.T) * self.Omega_a_[1] + \
-                         (c_3_4 @ p.T) * self.Omega_a_[2]
-                return torch.stack([p1_dot, p2_dot, p3_dot, p4_dot]).T
+            p1_dot = (c_2_1 @ p.T) * self.Omega_a_[1] + \
+                        (c_3_1 @ p.T) * self.Omega_a_[2] + \
+                        (c_4_1 @ p.T) * self.Omega_a_[3]
+            p2_dot = (c_1_2 @ p.T) * self.Omega_a_[0] + \
+                        (c_3_2 @ p.T) * self.Omega_a_[2] + \
+                        (c_4_2 @ p.T) * self.Omega_a_[3]
+            p3_dot = (c_1_3 @ p.T) * self.Omega_a_[0] + \
+                        (c_2_3 @ p.T) * self.Omega_a_[1] + \
+                        (c_4_3 @ p.T) * self.Omega_a_[3]
+            p4_dot = (c_1_4 @ p.T) * self.Omega_a_[0] + \
+                        (c_2_4 @ p.T) * self.Omega_a_[1] + \
+                        (c_3_4 @ p.T) * self.Omega_a_[2]
+            return torch.stack([p1_dot, p2_dot, p3_dot, p4_dot]).T
 
         def evaluate(self, t: torch.Tensor, network: torch.nn.Module=None) -> torch.Tensor:
             # state at time t
-            self.theta_ = self.theta(t, True)
+            self.theta_ = self.theta(t)
             self.theta_dot_ = self.theta_dot(t)
-            self.phi_ = self.phi(t, True)
+            self.phi_ = self.phi(t)
             self.phi_dot_ = self.phi_dot(t)
-            self.x_ = self.x(t, True)
+            self.x_ = self.x(t)
             self.x_dot_ = self.x_dot(t)
-            self.y_ = self.y(t, True)
+            self.y_ = self.y(t)
             self.y_dot_ = self.y_dot(t)
             self.q_ = self.q()
 
             # coordinates
-            self.u1 = self.u_alpha('SE(2)', nn=network)
+            self.u1 = self.u_alpha('SE(2)', self.q_)
             self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
 
             # coefficients
@@ -222,53 +222,24 @@ class InfGenerator(torch.nn.Module):
         ##
         ## Utils
         ##
-        def nan_to_num(self, x) -> torch.Tensor:
-            x_new = torch.zeros(len(x))
-            for i in range(len(x)):
-                if x[i] is not None:
-                    x_new[i] = x[i].clone()
-            return x_new
 
-        def bracket(self, g1: torch.Tensor, g2: torch.Tensor) -> torch.Tensor:
+        def bracket(self, func1, func2, q) -> torch.Tensor:
             """
             Lie bracket of two vector fields, assume g1 and g2 are functions of (theta, phi, x, y)
             """
             coords = (self.theta_, self.phi_, self.x_, self.y_)
+            device = coords[0].device
+
+            J_g1 = torch.autograd.functional.jacobian(func1, coords, create_graph=True)
+            J_g2 = torch.autograd.functional.jacobian(func2, coords, create_graph=True)
+
+            u1 = func1(q) * J_g2[0] - func2(q) * J_g1[0]
+            u2 = func1(q) * J_g2[1] - func2(q) * J_g1[1]
+            u3 = func1(q) * J_g2[2] - func2(q) * J_g1[2]
+            u4 = func1(q) * J_g2[3] - func2(q) * J_g1[3]
             
-            try:
-                if g1.requires_grad and g2.requires_grad:
-                    u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
-                    - g2 * self.nan_to_num(torch.autograd.grad(g1[0], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
-                    - g2 * self.nan_to_num(torch.autograd.grad(g1[1], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
-                    - g2 * self.nan_to_num(torch.autograd.grad(g1[2], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], coords, allow_unused=True, retain_graph=True, create_graph=True)) \
-                    - g2 * self.nan_to_num(torch.autograd.grad(g1[3], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                elif g1.requires_grad and (not g2.requires_grad):
-                    u1 = - g2 * self.nan_to_num(torch.autograd.grad(g1[0], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u2 = - g2 * self.nan_to_num(torch.autograd.grad(g1[1], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u3 = - g2 * self.nan_to_num(torch.autograd.grad(g1[2], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u4 = - g2 * self.nan_to_num(torch.autograd.grad(g1[3], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                elif (not g1.requires_grad) and g2.requires_grad:
-                    u1 = g1 * self.nan_to_num(torch.autograd.grad(g2[0], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u2 = g1 * self.nan_to_num(torch.autograd.grad(g2[1], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u3 = g1 * self.nan_to_num(torch.autograd.grad(g2[2], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                    u4 = g1 * self.nan_to_num(torch.autograd.grad(g2[3], coords, allow_unused=True, retain_graph=True, create_graph=True))
-                else:
-                    u1 = u2 = u3 = u4 = torch.zeros(4)
-            except RuntimeError as e:
-                if "second time" in str(e):
-                    # If we get the backward error, return zeros to avoid breaking the computation
-                    u1 = u2 = u3 = u4 = torch.zeros(4)
-                else:
-                    raise e
-            e1 = u1.sum()
-            e2 = u2.sum()
-            e3 = u3.sum()
-            e4 = u4.sum()
-            return torch.stack([e1, e2, e3, e4])
-        
+            return torch.stack([u1, u2, u3, u4])
+
         def compute_c(self, type, v: torch.Tensor):
             """
             compute bracket coefficients with known constraint distribution
