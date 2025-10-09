@@ -1,6 +1,6 @@
 from motion import InfGenerator
 import torch
-from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint
 import numpy as np
 import os
 import matplotlib.pyplot as plt
@@ -23,18 +23,18 @@ torch.set_default_tensor_type('torch.cuda.FloatTensor')
 t = torch.arange(0., 20, 0.01).to(device)
 opts = {
     'data_size': t.size(0),
-    'batch_time': 2,
+    'batch_time': 10,
     'batch_size': 20
 }
 
 network = torch.nn.Sequential(
-            torch.nn.Linear(4, 20),
+            torch.nn.Linear(4, 50),
             torch.nn.Tanh(),
-            torch.nn.Linear(20, 3),
+            torch.nn.Linear(50, 3),
         ).to(device)
 for m in network.modules():
     if isinstance(m, torch.nn.Linear):
-        torch.nn.init.normal_(m.weight, mean=0, std=1)
+        torch.nn.init.normal_(m.weight, mean=0, std=0.3)
         torch.nn.init.constant_(m.bias, val=0)
 
 def get_batch(true_y, options):
@@ -117,16 +117,18 @@ if __name__ == "__main__":
         dynamics_true.sys.evaluate(t[i])
         true_A[i] = dynamics_true.sys.u1[1:4]
 
-    for itr in range(1, 11):
+    for itr in range(1, 101):
         optimizer.zero_grad()
         batch_p0, batch_t, batch_p = get_batch(true_p, opts)
-        pred_p = odeint(dynamics_param, batch_p0, batch_t).to(device)
+        print('start training cycle')
+        pred_p = odeint(dynamics_param, batch_p0, batch_t, method='dopri5').to(device)
         loss = torch.mean(torch.abs(pred_p - batch_p))
-        loss.backward(retain_graph=True)
+        loss.backward()
         optimizer.step()
         print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
 
-        pred_p = odeint(dynamics_param, p0, t)
-        pred_A = dynamics_param.net(true_p)
-        with torch.no_grad():
-            visualize(true_p, pred_p, true_A, pred_A, dynamics_param, itr)
+        if itr % 10 == 0:
+            pred_p = odeint(dynamics_param, p0, t)
+            pred_A = dynamics_param.net(true_p)
+            with torch.no_grad():
+                visualize(true_p, pred_p, true_A, pred_A, dynamics_param, itr)

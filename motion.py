@@ -45,23 +45,23 @@ class InfGenerator(torch.nn.Module):
             self.m = m
 
             # state at time t
-            self.theta_ = self.theta(t, True)
+            self.theta_ = self.theta(t)
             self.theta_dot_ = self.theta_dot(t)
-            self.phi_ = self.phi(t, True)
+            self.phi_ = self.phi(t)
             self.phi_dot_ = self.phi_dot(t)
-            self.x_ = self.x(t, True)
+            self.x_ = self.x(t)
             self.x_dot_ = self.x_dot(t)
-            self.y_ = self.y(t, True)
+            self.y_ = self.y(t)
             self.y_dot_ = self.y_dot(t)
             self.q_ = self.q()
 
             # coordinates
-            self.u1 = self.u_alpha('SE(2)', self.q_)
-            self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
+            self.u1 = self.u_alpha(self.q_)
+            self.u2, self.u3, self.u4 = self.u_sigma_a(self.q_)
 
             # coefficients
-            self.Omega_a_ = self.Omega_a('SE(2)')
-            self.c_j_i = self.compute_c_j_i('SE(2)')
+            self.Omega_a_ = self.Omega_a()
+            self.c_j_i = self.compute_c_j_i()
 
         '''
         Equations of motion for training
@@ -119,10 +119,9 @@ class InfGenerator(torch.nn.Module):
             """
             Constraint distribution. Input a time scalar t.
             """
-            phi = self.phi_
             if self.nn is None:
-                u1 =  self.R*torch.cos(phi)*torch.tensor([0., 0., 1., 0.]) + \
-                    self.R*torch.sin(phi)*torch.tensor([0., 0., 0., 1.]) + \
+                u1 =  self.R*torch.cos(self.phi_)*torch.tensor([0., 0., 1., 0.]) + \
+                    self.R*torch.sin(self.phi_)*torch.tensor([0., 0., 0., 1.]) + \
                     torch.tensor([1., 0., 0., 0.])
             else:
                 A_learned = self.nn(q)
@@ -137,16 +136,37 @@ class InfGenerator(torch.nn.Module):
             """
             Lie algebra vector field
             """
-            x = q[2]
-            y = q[3]
-            u2 = y*torch.tensor([0., 0., -1., 0.], device=y.device) + \
-                    x*torch.tensor([0., 0., 0., 1.], device=y.device) + \
-                    torch.tensor([0., 1., 0., 0.], device=y.device)
-            u3 = torch.tensor([0., 0., 1., 0.], device=y.device)
-            u4 = torch.tensor([0., 0., 0., 1.], device=y.device)
+            u2 = q[3]*torch.tensor([0., 0., -1., 0.], device=q.device) + \
+                    q[2]*torch.tensor([0., 0., 0., 1.], device=q.device) + \
+                    torch.tensor([0., 1., 0., 0.], device=q.device)
+            u3 = torch.tensor([0., 0., 1., 0.], device=q.device)
+            u4 = torch.tensor([0., 0., 0., 1.], device=q.device)
             return u2, u3, u4
+        
+        def u_sigma_1(self, q) -> torch.Tensor:
+            """
+            Lie algebra vector field first element
+            """
+            u = q[3]*torch.tensor([0., 0., -1., 0.], device=q.device) + \
+                    q[2]*torch.tensor([0., 0., 0., 1.], device=q.device) + \
+                    torch.tensor([0., 1., 0., 0.], device=q.device)
+            return u
+        
+        def u_sigma_2(self, q) -> torch.Tensor:
+            """
+            Lie algebra vector field second element
+            """
+            u = torch.tensor([0., 0., 1., 0.], device=torch.device("cuda:0"))
+            return u
+        
+        def u_sigma_3(self, q) -> torch.Tensor:
+            """
+            Lie algebra vector field third element
+            """
+            u = torch.tensor([0., 0., 0., 1.], device=torch.device("cuda:0"))
+            return u
 
-        def Omega_a(self, type) -> torch.Tensor:
+        def Omega_a(self) -> torch.Tensor:
             """
             Quasi-velocities
             """
@@ -210,12 +230,12 @@ class InfGenerator(torch.nn.Module):
             self.q_ = self.q()
 
             # coordinates
-            self.u1 = self.u_alpha('SE(2)', self.q_)
-            self.u2, self.u3, self.u4 = self.u_sigma_a('SE(2)')
+            self.u1 = self.u_alpha(self.q_)
+            self.u2, self.u3, self.u4 = self.u_sigma_a(self.q_)
 
             # coefficients
-            self.Omega_a_ = self.Omega_a('SE(2)')
-            self.c_j_i = self.compute_c_j_i('SE(2)')
+            self.Omega_a_ = self.Omega_a()
+            self.c_j_i = self.compute_c_j_i()
 
             return
 
@@ -227,37 +247,35 @@ class InfGenerator(torch.nn.Module):
             """
             Lie bracket of two vector fields, assume g1 and g2 are functions of (theta, phi, x, y)
             """
-            coords = (self.theta_, self.phi_, self.x_, self.y_)
-            device = coords[0].device
+            v1 = func1(q)
+            v2 = func2(q)
 
-            J_g1 = torch.autograd.functional.jacobian(func1, coords, create_graph=True)
-            J_g2 = torch.autograd.functional.jacobian(func2, coords, create_graph=True)
+            J_g1 = torch.autograd.functional.jacobian(func1, q, create_graph=True)
+            J_g2 = torch.autograd.functional.jacobian(func2, q, create_graph=True)
 
-            u1 = func1(q) * J_g2[0] - func2(q) * J_g1[0]
-            u2 = func1(q) * J_g2[1] - func2(q) * J_g1[1]
-            u3 = func1(q) * J_g2[2] - func2(q) * J_g1[2]
-            u4 = func1(q) * J_g2[3] - func2(q) * J_g1[3]
-            
+            u1 = v1 @ J_g2[0] - v2 @ J_g1[0]
+            u2 = v1 @ J_g2[1] - v2 @ J_g1[1]
+            u3 = v1 @ J_g2[2] - v2 @ J_g1[2]
+            u4 = v1 @ J_g2[3] - v2 @ J_g1[3]
+
             return torch.stack([u1, u2, u3, u4])
 
-        def compute_c(self, type, v: torch.Tensor):
+        def compute_c(self, v: torch.Tensor):
             """
             compute bracket coefficients with known constraint distribution
             """
-            if type == 'SE(2)':
-                c1 = v[0]
-                c2 = v[1] + self.u1[1] * v[0]
-                c3 = v[2] + self.u1[2] * v[0] + self.y_ * v[1]
-                c4 = v[3] + self.u1[3] * v[0] - self.x_ * v[1]
-                return torch.stack([c1, c2, c3, c4])
-        
-        def compute_c_j_i(self, type):
-            c_2_1 = self.compute_c(type, self.bracket(self.u2, self.u1))
-            c_3_1 = self.compute_c(type, self.bracket(self.u3, self.u1))
-            c_4_1 = self.compute_c(type, self.bracket(self.u4, self.u1))
-            c_3_2 = self.compute_c(type, self.bracket(self.u3, self.u2))
-            c_4_2 = self.compute_c(type, self.bracket(self.u4, self.u2))
-            c_4_3 = self.compute_c(type, self.bracket(self.u4, self.u3))
+            return torch.stack([v[0], 
+                                v[1] + self.u1[1] * v[0], 
+                                v[2] + self.u1[2] * v[0] + self.y_ * v[1], 
+                                v[3] + self.u1[3] * v[0] - self.x_ * v[1]])
+
+        def compute_c_j_i(self):
+            c_2_1 = self.compute_c(self.bracket(self.u_sigma_1, self.u_alpha, self.q_))
+            c_3_1 = self.compute_c(self.bracket(self.u_sigma_2, self.u_alpha, self.q_))
+            c_4_1 = self.compute_c(self.bracket(self.u_sigma_3, self.u_alpha, self.q_))
+            c_3_2 = self.compute_c(self.bracket(self.u_sigma_2, self.u_sigma_1, self.q_))
+            c_4_2 = self.compute_c(self.bracket(self.u_sigma_3, self.u_sigma_1, self.q_))
+            c_4_3 = torch.zeros(4, device=torch.device("cuda:0"))
             c_1_2 = -c_2_1
             c_1_3 = -c_3_1
             c_1_4 = -c_4_1
@@ -269,19 +287,3 @@ class InfGenerator(torch.nn.Module):
             c_i_3 = torch.stack([c_1_3, c_2_3, c_4_3], axis=0)
             c_i_4 = torch.stack([c_1_4, c_2_4, c_3_4], axis=0)
             return torch.stack([c_i_1, c_i_2, c_i_3, c_i_4], axis=0)
-
-        def plot(self) -> None:
-            x = torch.arange(-5, 5, 0.1)
-            y = torch.arange(-5, 5, 0.1)
-            X,Y = np.meshgrid(x,y)
-            EX = -(Y - self.x_0) * self.omega
-            EY = (X - self.x_0) * self.omega
-
-            # Depict illustration 
-            plt.figure(figsize=(10, 10)) 
-            plt.streamplot(X, Y, EX, EY, density=1.4, linewidth=None, color='#A23BEC')
-            plt.title('Motion on the x-y plane') 
-            
-            # Show plot with grid 
-            plt.grid() 
-            plt.show()
