@@ -12,7 +12,7 @@ class InfGenerator(torch.nn.Module):
         self.sys = self.EquationsOfMotion(nn=self.net)
 
     def forward(self, t, p):
-        self.sys.evaluate(t, network=self.net)
+        self.sys.evaluate(t)
         return self.sys.p_dot(p, self.type)
         
         
@@ -24,8 +24,8 @@ class InfGenerator(torch.nn.Module):
                     omega: float = 3,
                     R: float = 3,
                     phi_0: float = 0,
-                    x_0: float = 0,
-                    y_0: float = 0,
+                    x_0: float = 3,
+                    y_0: float = -3,
                     I: float = 1,
                     J: float = 1,
                     m: float = 1,
@@ -81,36 +81,24 @@ class InfGenerator(torch.nn.Module):
         def q_dot(self, t: torch.Tensor) -> torch.Tensor:
             return torch.cat([self.theta_dot(t[0]), self.phi_dot(t[1]), self.x_dot(t[2]), self.y_dot(t[3])], axis=0)
 
-        def theta(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+        def theta(self, t: torch.Tensor) -> torch.Tensor:
             theta = self.Omega*t
-            if requires_grad:
-                theta.requires_grad_()
             return theta
 
-        def phi(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+        def phi(self, t: torch.Tensor) -> torch.Tensor:
             phi = self.omega*t + self.phi_0
-            if requires_grad:
-                phi.requires_grad_()
             return phi
 
-        def x(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+        def x(self, t: torch.Tensor) -> torch.Tensor:
             x = self.Omega/self.omega * self.R * torch.sin(self.omega*t + self.phi_0) + self.x_0
-            if requires_grad:
-                x.requires_grad_()
             return x
 
-        def y(self, t: torch.Tensor, requires_grad: bool = False) -> torch.Tensor:
+        def y(self, t: torch.Tensor) -> torch.Tensor:
             y = -self.Omega/self.omega * self.R * torch.cos(self.omega*t + self.phi_0) + self.y_0
-            if requires_grad:
-                y.requires_grad_()
             return y
 
         def q(self) -> torch.Tensor:
             return torch.stack([self.theta_, self.phi_, self.x_, self.y_])
-
-        def dL_dqdot(self, t:torch.Tensor) -> torch.Tensor:
-            return torch.cat([self.I * self.theta_dot(t[0]), self.J * self.phi_dot(t[1]), self.m * self.x_dot(t[2]), self.m * self.y_dot(t[3])], axis=0)
-
 
         ## 
         ## Hamel's formulation
@@ -120,8 +108,8 @@ class InfGenerator(torch.nn.Module):
             Constraint distribution. Input a time scalar t.
             """
             if self.nn is None:
-                u1 =  self.R*torch.cos(self.phi_)*torch.tensor([0., 0., 1., 0.]) + \
-                    self.R*torch.sin(self.phi_)*torch.tensor([0., 0., 0., 1.]) + \
+                u1 =  self.R*torch.cos(q[1])*torch.tensor([0., 0., 1., 0.]) + \
+                    self.R*torch.sin(q[1])*torch.tensor([0., 0., 0., 1.]) + \
                     torch.tensor([1., 0., 0., 0.])
             else:
                 A_learned = self.nn(q)
@@ -217,7 +205,7 @@ class InfGenerator(torch.nn.Module):
                         (c_3_4 @ p.T) * self.Omega_a_[2]
             return torch.stack([p1_dot, p2_dot, p3_dot, p4_dot]).T
 
-        def evaluate(self, t: torch.Tensor, network: torch.nn.Module=None) -> torch.Tensor:
+        def evaluate_state(self, t: torch.Tensor) -> torch.Tensor:
             # state at time t
             self.theta_ = self.theta(t)
             self.theta_dot_ = self.theta_dot(t)
@@ -228,6 +216,11 @@ class InfGenerator(torch.nn.Module):
             self.y_ = self.y(t)
             self.y_dot_ = self.y_dot(t)
             self.q_ = self.q()
+            return
+        
+        def evaluate(self, t: torch.Tensor) -> torch.Tensor:
+            # state at time t
+            self.evaluate_state(t)
 
             # coordinates
             self.u1 = self.u_alpha(self.q_)
@@ -264,10 +257,11 @@ class InfGenerator(torch.nn.Module):
             """
             compute bracket coefficients with known constraint distribution
             """
-            return torch.stack([v[0], 
-                                v[1] + self.u1[1] * v[0], 
-                                v[2] + self.u1[2] * v[0] + self.y_ * v[1], 
-                                v[3] + self.u1[3] * v[0] - self.x_ * v[1]])
+            v1 = v[0]
+            v2 = v[1] + self.u1[1] * v1
+            v3 = v[2] + self.u1[2] * v1 + self.y_ * v2
+            v4 = v[3] + self.u1[3] * v1 - self.x_ * v2
+            return torch.stack([v1, v2, v3, v4])
 
         def compute_c_j_i(self):
             c_2_1 = self.compute_c(self.bracket(self.u_sigma_1, self.u_alpha, self.q_))
