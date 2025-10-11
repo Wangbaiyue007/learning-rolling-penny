@@ -1,4 +1,5 @@
 import torch
+from torch.func import jacrev, vmap
 import matplotlib.pyplot as plt 
 import numpy as np
 
@@ -12,7 +13,7 @@ class InfGenerator(torch.nn.Module):
         self.sys = self.EquationsOfMotion(nn=self.net)
 
     def forward(self, t, p):
-        self.sys.evaluate(t)
+        self.sys.evaluate(p)
         return self.sys.p_dot(p)
         
         
@@ -57,7 +58,6 @@ class InfGenerator(torch.nn.Module):
 
             # coordinates
             self.u1 = self.u_alpha(self.q_)
-            self.u2, self.u3, self.u4 = self.u_sigma_a(self.q_)
 
             # coefficients
             self.Omega_a_ = self.Omega_a()
@@ -67,10 +67,10 @@ class InfGenerator(torch.nn.Module):
         Equations of motion for training
         '''
         def theta_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.Omega * torch.ones(1)
+            return self.Omega * torch.ones(1)[0]
 
         def phi_dot(self, t: torch.Tensor) -> torch.Tensor:
-            return self.omega * torch.ones(1)
+            return self.omega * torch.ones(1)[0]
 
         def x_dot(self, t: torch.Tensor) -> torch.Tensor:
             return self.Omega*self.R*torch.cos(self.omega*t + self.phi_0)
@@ -112,12 +112,20 @@ class InfGenerator(torch.nn.Module):
                     self.R*torch.sin(q[1])*torch.tensor([0., 0., 0., 1.]) + \
                     torch.tensor([1., 0., 0., 0.])
             else:
-                A_learned = self.nn(q)
-                u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device) + \
-                    - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device) + \
-                    - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device) + \
-                    - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device)
-            return u1
+                if len(q.shape) > 1:
+                    A_learned = self.nn(q).T
+                    u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
+                        - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
+                        - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
+                        - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device).repeat(A_learned.size(1), 1).mT
+                    u1 = u1.mT
+                else:
+                    A_learned = self.nn(q)
+                    u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device) + \
+                        - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device) + \
+                        - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device) + \
+                        - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device)
+            return u1 # n x 4
         
 
         def u_sigma_a(self, q) -> torch.Tensor:
@@ -135,23 +143,35 @@ class InfGenerator(torch.nn.Module):
             """
             Lie algebra vector field first element
             """
-            u = q[3]*torch.tensor([0., 0., -1., 0.], device=q.device) + \
-                    q[2]*torch.tensor([0., 0., 0., 1.], device=q.device) + \
-                    torch.tensor([0., 1., 0., 0.], device=q.device)
+            if len(q.shape) > 1:
+                u = q[:, 3]*torch.tensor([0., 0., -1., 0.], device=q.device).repeat(q.size(0), 1).mT + \
+                        q[:, 2]*torch.tensor([0., 0., 0., 1.], device=q.device).repeat(q.size(0), 1).mT + \
+                        torch.tensor([0., 1., 0., 0.], device=q.device).repeat(q.size(0), 1).mT
+                u = u.mT
+            else:
+                u = q[3]*torch.tensor([0., 0., -1., 0.], device=q.device) + \
+                        q[2]*torch.tensor([0., 0., 0., 1.], device=q.device) + \
+                        torch.tensor([0., 1., 0., 0.], device=q.device)
             return u
         
         def u_sigma_2(self, q) -> torch.Tensor:
             """
             Lie algebra vector field second element
             """
-            u = torch.tensor([0., 0., 1., 0.], device=torch.device("cuda:0"))
+            if len(q.shape) > 1:
+                u = torch.tensor([0., 0., 1., 0.], device=q.device).repeat(q.size(0), 1)
+            else:
+                u = torch.tensor([0., 0., 1., 0.], device=q.device)
             return u
         
         def u_sigma_3(self, q) -> torch.Tensor:
             """
             Lie algebra vector field third element
             """
-            u = torch.tensor([0., 0., 0., 1.], device=torch.device("cuda:0"))
+            if len(q.shape) > 1:
+                u = torch.tensor([0., 0., 0., 1.], device=q.device).repeat(q.size(0), 1)
+            else:
+                u = torch.tensor([0., 0., 0., 1.], device=q.device)
             return u
 
         def Omega_a(self) -> torch.Tensor:
@@ -162,7 +182,7 @@ class InfGenerator(torch.nn.Module):
             omega2 = self.phi_dot_
             omega3 = self.y_*self.phi_dot_
             omega4 = -self.x_*self.phi_dot_
-            return torch.cat([omega1, omega2, omega3, omega4])
+            return torch.stack([omega1, omega2, omega3, omega4])
 
         def p(self) -> torch.Tensor:
             """
@@ -176,8 +196,8 @@ class InfGenerator(torch.nn.Module):
             p2 = self.J * self.phi_dot_ - self.m * self.y_ * x_dot + self.m * self.x_ * y_dot
             p3 = self.m * x_dot
             p4 = self.m * y_dot
-            p1 = self.I * self.theta_dot_ - self.u1[1:4] @ torch.tensor([p2, p3, p4])
-            return torch.stack([p1[0], p2[0], p3, p4])
+            p1 = self.I * self.theta_dot_ - self.u1[1:4] @ torch.stack([p2, p3, p4])
+            return torch.stack([p1, p2, p3, p4, self.theta_, self.phi_, self.x_, self.y_]).T
 
         def p_dot(self, p:torch.Tensor) -> torch.Tensor:
             """
@@ -196,40 +216,72 @@ class InfGenerator(torch.nn.Module):
             c_2_4 = -c_4_2
             c_3_4 = -c_4_3
 
-            p1_dot = (c_2_1 @ p.T) * self.Omega_a_[1] + \
-                        (c_3_1 @ p.T) * self.Omega_a_[2] + \
-                        (c_4_1 @ p.T) * self.Omega_a_[3]
-            p2_dot = (c_1_2 @ p.T) * self.Omega_a_[0] + \
-                        (c_3_2 @ p.T) * self.Omega_a_[2] + \
-                        (c_4_2 @ p.T) * self.Omega_a_[3]
-            p3_dot = (c_1_3 @ p.T) * self.Omega_a_[0] + \
-                        (c_2_3 @ p.T) * self.Omega_a_[1] + \
-                        (c_4_3 @ p.T) * self.Omega_a_[3]
-            p4_dot = (c_1_4 @ p.T) * self.Omega_a_[0] + \
-                        (c_2_4 @ p.T) * self.Omega_a_[1] + \
-                        (c_3_4 @ p.T) * self.Omega_a_[2]
-            return torch.stack([p1_dot, p2_dot, p3_dot, p4_dot]).T
+            if len(p.shape) > 1:
+                p1_dot = torch.diag(c_2_1.T @ p.T[:4]) * self.Omega_a_[1] + \
+                            torch.diag(c_3_1.T @ p.T[:4]) * self.Omega_a_[2] + \
+                            torch.diag(c_4_1.T @ p.T[:4]) * self.Omega_a_[3]
+                p2_dot = torch.diag(c_1_2.T @ p.T[:4]) * self.Omega_a_[0] + \
+                        torch.diag(c_3_2.T @ p.T[:4]) * self.Omega_a_[2] + \
+                        torch.diag(c_4_2.T @ p.T[:4]) * self.Omega_a_[3]
+                p3_dot = torch.diag(c_1_3.T @ p.T[:4]) * self.Omega_a_[0] + \
+                            torch.diag(c_2_3.T @ p.T[:4]) * self.Omega_a_[1] + \
+                            torch.diag(c_4_3.T @ p.T[:4]) * self.Omega_a_[3]
+                p4_dot = torch.diag(c_1_4.T @ p.T[:4]) * self.Omega_a_[0] + \
+                            torch.diag(c_2_4.T @ p.T[:4]) * self.Omega_a_[1] + \
+                            torch.diag(c_3_4.T @ p.T[:4]) * self.Omega_a_[2]
+            else:
+                p1_dot = (c_2_1.T @ p.T[:4]) * self.Omega_a_[1] + \
+                            (c_3_1.T @ p.T[:4]) * self.Omega_a_[2] + \
+                            (c_4_1.T @ p.T[:4]) * self.Omega_a_[3]
+                p2_dot = (c_1_2.T @ p.T[:4]) * self.Omega_a_[0] + \
+                        (c_3_2.T @ p.T[:4]) * self.Omega_a_[2] + \
+                        (c_4_2.T @ p.T[:4]) * self.Omega_a_[3]
+                p3_dot = (c_1_3.T @ p.T[:4]) * self.Omega_a_[0] + \
+                            (c_2_3.T @ p.T[:4]) * self.Omega_a_[1] + \
+                            (c_4_3.T @ p.T[:4]) * self.Omega_a_[3]
+                p4_dot = (c_1_4.T @ p.T[:4]) * self.Omega_a_[0] + \
+                            (c_2_4.T @ p.T[:4]) * self.Omega_a_[1] + \
+                            (c_3_4.T @ p.T[:4]) * self.Omega_a_[2]
+            return torch.stack([p1_dot, p2_dot, p3_dot, p4_dot, self.theta_dot_, self.phi_dot_, self.x_dot_, self.y_dot_]).T
 
-        def evaluate_state(self, t: torch.Tensor) -> torch.Tensor:
+        def evaluate_q(self, p: torch.Tensor) -> torch.Tensor:
             # state at time t
-            self.theta_ = self.theta(t)
-            self.theta_dot_ = self.theta_dot(t)
-            self.phi_ = self.phi(t)
-            self.phi_dot_ = self.phi_dot(t)
-            self.x_ = self.x(t)
-            self.x_dot_ = self.x_dot(t)
-            self.y_ = self.y(t)
-            self.y_dot_ = self.y_dot(t)
-            self.q_ = self.q()
+            p = p.T
+            self.theta_ = p[4]
+            self.phi_ = p[5]
+            self.x_ = p[6]
+            self.y_ = p[7]
+
+            self.q_ = self.q().T
             return
         
-        def evaluate(self, t: torch.Tensor) -> torch.Tensor:
+        def evaluate_state(self, p: torch.Tensor) -> torch.Tensor:
             # state at time t
-            self.evaluate_state(t)
+            if len(p.shape) > 1:
+                p = p.T
+                self.theta_dot_ = (p[0] + torch.diag(self.u1[:,1:4] @ p[1:4]))/self.I
+                self.x_dot_ = p[2]/self.m
+                self.y_dot_ = p[3]/self.m
+                self.phi_dot_ = (p[1] + self.m*self.y_*self.x_dot_ - self.m*self.x_*self.y_dot_)/self.J
+            else:
+                p = p.T
+                self.theta_dot_ = (p[0] + self.u1[1:4] @ p[1:4])/self.I
+                self.x_dot_ = p[2]/self.m
+                self.y_dot_ = p[3]/self.m
+                self.phi_dot_ = (p[1] + self.m*self.y_*self.x_dot_ - self.m*self.x_*self.y_dot_)/self.J
+
+            return
+        
+        def evaluate(self, p: torch.Tensor) -> torch.Tensor:
+            
+            # configuration
+            self.evaluate_q(p)
 
             # coordinates
             self.u1 = self.u_alpha(self.q_)
-            self.u2, self.u3, self.u4 = self.u_sigma_a(self.q_)
+
+            # state at time t
+            self.evaluate_state(p)
 
             # coefficients
             self.Omega_a_ = self.Omega_a()
@@ -248,24 +300,39 @@ class InfGenerator(torch.nn.Module):
             v1 = func1(q)
             v2 = func2(q)
 
-            J_g1 = torch.autograd.functional.jacobian(func1, q, create_graph=True)
-            J_g2 = torch.autograd.functional.jacobian(func2, q, create_graph=True)
+            if len(q.shape) <= 1:
+                J_g1 = torch.autograd.functional.jacobian(func1, q, create_graph=True)
+                J_g2 = torch.autograd.functional.jacobian(func2, q, create_graph=True)
 
-            u1 = v1 @ J_g2[0] - v2 @ J_g1[0]
-            u2 = v1 @ J_g2[1] - v2 @ J_g1[1]
-            u3 = v1 @ J_g2[2] - v2 @ J_g1[2]
-            u4 = v1 @ J_g2[3] - v2 @ J_g1[3]
+                u1 = v1 @ J_g2[0] - v2 @ J_g1[0]
+                u2 = v1 @ J_g2[1] - v2 @ J_g1[1]
+                u3 = v1 @ J_g2[2] - v2 @ J_g1[2]
+                u4 = v1 @ J_g2[3] - v2 @ J_g1[3]
+            else:
+                J_g1 = vmap(jacrev(func1))(q)
+                J_g2 = vmap(jacrev(func2))(q)
 
-            return torch.stack([u1, u2, u3, u4])
+                u1 = torch.diag(v1 @ J_g2[:,:,0].mT) - torch.diag(v2 @ J_g1[:,:,0].mT)
+                u2 = torch.diag(v1 @ J_g2[:,:,1].mT) - torch.diag(v2 @ J_g1[:,:,1].mT)
+                u3 = torch.diag(v1 @ J_g2[:,:,2].mT) - torch.diag(v2 @ J_g1[:,:,2].mT)
+                u4 = torch.diag(v1 @ J_g2[:,:,3].mT) - torch.diag(v2 @ J_g1[:,:,3].mT)
+
+            return torch.stack([u1, u2, u3, u4]) # n x 4
 
         def compute_c(self, v: torch.Tensor):
             """
             compute bracket coefficients with known constraint distribution
             """
-            v1 = v[0]
-            v2 = v[1] + self.u1[1] * v1
-            v3 = v[2] + self.u1[2] * v1 + self.y_ * v2
-            v4 = v[3] + self.u1[3] * v1 - self.x_ * v2
+            if len(v.shape) <= 1:
+                v1 = v[0]
+                v2 = v[1] + self.u1[1] * v1
+                v3 = v[2] + self.u1[2] * v1 + self.y_ * v2
+                v4 = v[3] + self.u1[3] * v1 - self.x_ * v2
+            else:
+                v1 = v[0]
+                v2 = v[1] + self.u1[:,1] * v1
+                v3 = v[2] + self.u1[:,2] * v1 + self.y_ * v2
+                v4 = v[3] + self.u1[:,3] * v1 - self.x_ * v2
             return torch.stack([v1, v2, v3, v4])
 
         def compute_c_j_i(self):
@@ -274,7 +341,10 @@ class InfGenerator(torch.nn.Module):
             c_4_1 = self.compute_c(self.bracket(self.u_sigma_3, self.u_alpha, self.q_))
             c_3_2 = self.compute_c(self.bracket(self.u_sigma_2, self.u_sigma_1, self.q_))
             c_4_2 = self.compute_c(self.bracket(self.u_sigma_3, self.u_sigma_1, self.q_))
-            c_4_3 = torch.zeros(4, device=torch.device("cuda:0"))
+            if len(c_2_1.shape) > 1:
+                c_4_3 = torch.zeros((4, c_2_1.size(1)), device=torch.device("cuda:0"))
+            else:
+                c_4_3 = torch.zeros(4, device=torch.device("cuda:0"))
             c_1_2 = -c_2_1
             c_1_3 = -c_3_1
             c_1_4 = -c_4_1

@@ -20,7 +20,7 @@ plt.show(block=False)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device('cuda:0')
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
-t = torch.arange(0., 25, 0.05).to(device)
+t = torch.arange(5., 25, 0.05).to(device)
 opts = {
     'data_size': t.size(0),
     'batch_time': 20,
@@ -32,10 +32,6 @@ class Sine(torch.nn.Module):
     
 network = torch.nn.Sequential(
             torch.nn.Linear(4, 50),
-            torch.nn.Tanh(),
-            torch.nn.Linear(50, 3),
-            Sine(),
-            torch.nn.Linear(3, 50),
             torch.nn.Tanh(),
             torch.nn.Linear(50, 3),
         ).to(device)
@@ -122,10 +118,10 @@ if __name__ == "__main__":
         true_A = torch.zeros((t.size(0), 3)).to(device)
         pred_p = torch.zeros((t.size(0), 4)).to(device)
         for i in range(t.size(0)):
-            dynamics_true.sys.evaluate(t[i])
-            pred_p[i] = dynamics_true.sys.p()
+            dynamics_true.sys.evaluate(true_p[i])
+            pred_p[i] = dynamics_true.sys.p()[:4]
             true_A[i] = dynamics_true.sys.u1[1:4]
-        visualize(true_p, pred_p, true_A, true_A, dynamics_param, 0)
+        # visualize(true_p, pred_p, true_A, true_A, dynamics_param, 0)
 
     for itr in range(0, 501):
         optimizer.zero_grad()
@@ -139,6 +135,6 @@ if __name__ == "__main__":
         if itr % 50 == 0:
             with torch.no_grad():
                 pred_p = odeint(dynamics_param, p0, t)
-                dynamics_param.sys.evaluate_state(t)
-                pred_A = dynamics_param.net(dynamics_param.sys.q_.T)
+                dynamics_param.sys.evaluate_q(pred_p)
+                pred_A = dynamics_param.net(dynamics_param.sys.q_)
                 visualize(true_p, pred_p, true_A, pred_A, dynamics_param, itr)
