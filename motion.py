@@ -13,7 +13,7 @@ class InfGenerator(torch.nn.Module):
 
     def forward(self, t, p):
         self.sys.evaluate(t)
-        return self.sys.p_dot(p, self.type)
+        return self.sys.p_dot(p)
         
         
     class EquationsOfMotion:
@@ -21,8 +21,8 @@ class InfGenerator(torch.nn.Module):
         def __init__(self, 
                     nn: torch.nn.Module = None,
                     Omega: float = 1,
-                    omega: float = 3,
-                    R: float = 3,
+                    omega: float = 0.5,
+                    R: float = 0.1,
                     phi_0: float = 0,
                     x_0: float = 3,
                     y_0: float = -3,
@@ -158,23 +158,28 @@ class InfGenerator(torch.nn.Module):
             """
             Quasi-velocities
             """
-            omega1 = self.phi_dot_
-            omega2 = self.u1[1]*self.theta_dot_ + self.phi_dot_
-            omega3 = self.u1[2]*self.theta_dot_ + (self.y_*self.phi_dot_ + self.x_dot_)
-            omega4 = self.u1[3]*self.theta_dot_ + (-self.x_*self.phi_dot_ + self.y_dot_)
+            omega1 = self.theta_dot_
+            omega2 = self.phi_dot_
+            omega3 = self.y_*self.phi_dot_
+            omega4 = -self.x_*self.phi_dot_
             return torch.cat([omega1, omega2, omega3, omega4])
 
-        def p(self, type) -> torch.Tensor:
+        def p(self) -> torch.Tensor:
             """
             Momentum in body frame
             """
-            p2 = self.J * self.phi_dot_ - self.m * self.y_ * self.x_dot_ + self.m * self.x_ * self.y_dot_
-            p3 = self.m * self.x_dot_
-            p4 = self.m * self.y_dot_
+            xi_2 = self.Omega_a_[1] - self.u1[1]*self.Omega_a_[0]
+            xi_3 = self.Omega_a_[2] - self.u1[2]*self.Omega_a_[0]
+            xi_4 = self.Omega_a_[3] - self.u1[3]*self.Omega_a_[0]
+            x_dot = -self.y_*xi_2 + xi_3
+            y_dot = self.x_*xi_2 + xi_4
+            p2 = self.J * self.phi_dot_ - self.m * self.y_ * x_dot + self.m * self.x_ * y_dot
+            p3 = self.m * x_dot
+            p4 = self.m * y_dot
             p1 = self.I * self.theta_dot_ - self.u1[1:4] @ torch.tensor([p2, p3, p4])
             return torch.stack([p1[0], p2[0], p3, p4])
-            
-        def p_dot(self, p:torch.Tensor, type) -> torch.Tensor:
+
+        def p_dot(self, p:torch.Tensor) -> torch.Tensor:
             """
             Dynamics based on hamel's equations
             """

@@ -20,10 +20,10 @@ plt.show(block=False)
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 torch.set_default_device('cuda:0')
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
-t = torch.arange(0., 10, 0.01).to(device)
+t = torch.arange(0., 25, 0.05).to(device)
 opts = {
     'data_size': t.size(0),
-    'batch_time': 10,
+    'batch_time': 20,
     'batch_size': 100
 }
 class Sine(torch.nn.Module):
@@ -32,7 +32,11 @@ class Sine(torch.nn.Module):
     
 network = torch.nn.Sequential(
             torch.nn.Linear(4, 50),
+            torch.nn.Tanh(),
+            torch.nn.Linear(50, 3),
             Sine(),
+            torch.nn.Linear(3, 50),
+            torch.nn.Tanh(),
             torch.nn.Linear(50, 3),
         ).to(device)
 for m in network.modules():
@@ -72,9 +76,9 @@ def visualize(true_p, pred_p, true_A, pred_A, odefunc, itr):
     ax_A.plot(t.cpu().numpy(), true_A.cpu().numpy()[:, 0], 'g-')
     ax_A.plot(t.cpu().numpy(), true_A.cpu().numpy()[:, 1], 'b-')
     ax_A.plot(t.cpu().numpy(), true_A.cpu().numpy()[:, 2], 'r-')
-    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 0], color='grey', linestyle='--')
-    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 1], color='grey', linestyle='--')
-    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 2], color='grey', linestyle='--')
+    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 0], color='green', linestyle='--')
+    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 1], color='blue', linestyle='--')
+    ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 2], color='red', linestyle='--')
     ax_A.set_xlim(t.cpu().min(), t.cpu().max())
     ax_A.legend()
 
@@ -113,17 +117,20 @@ if __name__ == "__main__":
     optimizer = torch.optim.RMSprop(dynamics_param.parameters(), lr=1e-3)
 
     with torch.no_grad():
-        p0 = dynamics_true.sys.p('SE(2)')
+        p0 = dynamics_true.sys.p()
         true_p = odeint(dynamics_true, p0, t).to(device)
         true_A = torch.zeros((t.size(0), 3)).to(device)
+        pred_p = torch.zeros((t.size(0), 4)).to(device)
         for i in range(t.size(0)):
             dynamics_true.sys.evaluate(t[i])
+            pred_p[i] = dynamics_true.sys.p()
             true_A[i] = dynamics_true.sys.u1[1:4]
+        visualize(true_p, pred_p, true_A, true_A, dynamics_param, 0)
 
     for itr in range(0, 501):
         optimizer.zero_grad()
         batch_p0, batch_t, batch_p = get_batch(true_p, opts)
-        pred_p = odeint(dynamics_param, batch_p0, batch_t, method='dopri5').to(device)
+        pred_p = odeint(dynamics_param, batch_p0, batch_t).to(device)
         loss = torch.sum(torch.square(pred_p - batch_p))
         loss.backward()
         optimizer.step()
