@@ -31,9 +31,11 @@ class Sine(torch.nn.Module):
         return torch.sin(x)
     
 network = torch.nn.Sequential(
-            torch.nn.Linear(4, 50),
+            torch.nn.Linear(4, 10),
             Sine(),
-            torch.nn.Linear(50, 3),
+            torch.nn.Linear(10, 10),
+            torch.nn.ELU(alpha=0.5),
+            torch.nn.Linear(10, 3)
         ).to(device)
 for m in network.modules():
     if isinstance(m, torch.nn.Linear):
