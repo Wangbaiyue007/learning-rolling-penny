@@ -117,6 +117,8 @@ class InfGenerator(torch.nn.Module):
                     A_learned = self.nn(q).T
                     u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
                         - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
+                        - A_learned[0]*q[:,3]*torch.tensor([0., 0., -1., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
+                        - A_learned[0]*q[:,2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
                         - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
                         - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device).repeat(A_learned.size(1), 1).mT
                     u1 = u1.mT
