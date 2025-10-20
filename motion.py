@@ -58,6 +58,7 @@ class InfGenerator(torch.nn.Module):
             self.xi_ = self.xi_a()
 
             # coordinates
+            self.A = self.nn(self.q_).T if self.nn is not None else torch.stack([torch.tensor(0.), -self.R*torch.cos(self.q_[1]), -self.R*torch.sin(self.q_[1])])
             self.u1 = self.u_alpha(self.q_)
 
             # coefficients
@@ -114,20 +115,19 @@ class InfGenerator(torch.nn.Module):
                     torch.tensor([1., 0., 0., 0.])
             else:
                 if len(q.shape) > 1:
-                    A_learned = self.nn(q).T
-                    u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
-                        - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
-                        - A_learned[0]*q[:,3]*torch.tensor([0., 0., -1., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
-                        - A_learned[0]*q[:,2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
-                        - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device).repeat(A_learned.size(1), 1).mT + \
-                        - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device).repeat(A_learned.size(1), 1).mT
+                    u1 =  torch.tensor([1., 0., 0., 0.], device=self.A.device).repeat(self.A.size(1), 1).mT + \
+                        - self.A[0]*torch.tensor([0., 1., 0., 0.], device=self.A.device).repeat(self.A.size(1), 1).mT + \
+                        - self.A[0]*q[:,3]*torch.tensor([0., 0., -1., 0.], device=self.A.device).repeat(self.A.size(1), 1).mT + \
+                        - self.A[0]*q[:,2]*torch.tensor([0., 0., 0., 1.], device=self.A.device).repeat(self.A.size(1), 1).mT + \
+                        - self.A[1]*torch.tensor([0., 0., 1., 0.], device=self.A.device).repeat(self.A.size(1), 1).mT + \
+                        - self.A[2]*torch.tensor([0., 0., 0., 1.], device=self.A.device).repeat(self.A.size(1), 1).mT
                     u1 = u1.mT
                 else:
-                    A_learned = self.nn(q)
-                    u1 =  torch.tensor([1., 0., 0., 0.], device=A_learned.device) + \
-                        - A_learned[0]*torch.tensor([0., 1., 0., 0.], device=A_learned.device) + \
-                        - A_learned[1]*torch.tensor([0., 0., 1., 0.], device=A_learned.device) + \
-                        - A_learned[2]*torch.tensor([0., 0., 0., 1.], device=A_learned.device)
+                    A = self.nn(q)
+                    u1 =  torch.tensor([1., 0., 0., 0.], device=A.device) + \
+                        - A[0]*torch.tensor([0., 1., 0., 0.], device=A.device) + \
+                        - A[1]*torch.tensor([0., 0., 1., 0.], device=A.device) + \
+                        - A[2]*torch.tensor([0., 0., 0., 1.], device=A.device)
             return u1 # n x 4
         
 
@@ -192,14 +192,14 @@ class InfGenerator(torch.nn.Module):
             """
             if len(self.q_.shape) > 1:
                 omega1 = self.theta_dot_
-                omega2 = self.xi_[:,0] - self.u1[:,1]*self.theta_dot_
-                omega3 = self.xi_[:,1] - self.u1[:,2]*self.theta_dot_
-                omega4 = self.xi_[:,2] - self.u1[:,3]*self.theta_dot_
+                omega2 = self.xi_[:,0] + self.A[0]*self.theta_dot_
+                omega3 = self.xi_[:,1] + self.A[1]*self.theta_dot_
+                omega4 = self.xi_[:,2] + self.A[2]*self.theta_dot_
             else:
                 omega1 = self.theta_dot_
-                omega2 = self.xi_[0] - self.u1[1]*self.theta_dot_
-                omega3 = self.xi_[1] - self.u1[2]*self.theta_dot_
-                omega4 = self.xi_[2] - self.u1[3]*self.theta_dot_
+                omega2 = self.xi_[0] + self.A[0]*self.theta_dot_
+                omega3 = self.xi_[1] + self.A[1]*self.theta_dot_
+                omega4 = self.xi_[2] + self.A[2]*self.theta_dot_
             return torch.stack([omega1, omega2, omega3, omega4])
 
         def p(self) -> torch.Tensor:
@@ -211,7 +211,7 @@ class InfGenerator(torch.nn.Module):
             p2 = self.J * self.phi_dot_ - self.m * self.y_ * x_dot + self.m * self.x_ * y_dot
             p3 = self.m * x_dot
             p4 = self.m * y_dot
-            p1 = self.I * self.theta_dot_ + self.u1[1:4] @ torch.stack([p2, p3, p4])
+            p1 = self.I * self.theta_dot_ - self.A @ torch.stack([p2, p3, p4])
             return torch.stack([p1, p2, p3, p4, self.theta_, self.phi_, self.x_, self.y_]).T
 
         def p_dot(self, p:torch.Tensor) -> torch.Tensor:
@@ -259,7 +259,7 @@ class InfGenerator(torch.nn.Module):
         def evaluate_state(self, p: torch.Tensor) -> torch.Tensor:
             # state at time t
             p = p.T
-            self.theta_dot_ = (p[0] - torch.linalg.vecdot(self.u1.T[1:4].T, p[1:4].T))/self.I
+            self.theta_dot_ = (p[0] + torch.linalg.vecdot(self.A.T, p[1:4].T))/self.I
             self.x_dot_ = p[2]/self.m
             self.y_dot_ = p[3]/self.m
             self.phi_dot_ = (p[1] + self.y_*p[2] - self.x_*p[3])/self.J
@@ -272,6 +272,7 @@ class InfGenerator(torch.nn.Module):
             self.evaluate_q(p)
 
             # coordinates
+            self.A = self.nn(self.q_).T if self.nn is not None else torch.stack([torch.tensor(0.), -self.R*torch.cos(self.q_[1]), -self.R*torch.sin(self.q_[1])])
             self.u1 = self.u_alpha(self.q_)
 
             # state at time t

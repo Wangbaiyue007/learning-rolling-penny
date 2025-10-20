@@ -124,7 +124,7 @@ if __name__ == "__main__":
         dynamics_true.sys.evaluate(true_p[i])
         pred_p[i] = dynamics_true.sys.p()[:4]
         true_p_dot[i] = dynamics_true.sys.p_dot(pred_p[i])
-        true_A[i] = - dynamics_true.sys.u1[1:4]
+        true_A[i] = dynamics_true.sys.A
     # visualize(true_p, pred_p, true_A, true_A, dynamics_param, 0)
 
     for itr in range(0, 2001):
@@ -143,3 +143,5 @@ if __name__ == "__main__":
                 pred_p = odeint(dynamics_param, p0, t)
                 pred_A = dynamics_param.net(true_p[:, 4:]).to(device)
                 visualize(true_p, pred_p, true_A, pred_A, dynamics_param, itr)
+
+    breakpoint()
