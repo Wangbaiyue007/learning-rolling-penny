@@ -133,7 +133,7 @@ if __name__ == "__main__":
         batch_p_dot = true_p_dot[s]
         pred_p = odeint(dynamics_param, batch_p0, batch_t).to(device)
         # pred_A = dynamics_param.net(true_p[:, 4:]).to(device)
-        loss = torch.sum(torch.square(pred_p - batch_p)) #+ 1e-3 * torch.sum(torch.square(pred_A))
+        loss = torch.sum(torch.square(pred_p - batch_p))
         loss.backward()
         optimizer.step()
         print('Iter {:04d} | Total Loss {:.6f}'.format(itr, loss.item()))
