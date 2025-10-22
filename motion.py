@@ -23,7 +23,7 @@ class InfGenerator(torch.nn.Module):
                     nn: torch.nn.Module = None,
                     Omega: float = 1,
                     omega: float = 0.5,
-                    R: float = 1,
+                    R: float = 0.3,
                     phi_0: float = 0,
                     x_0: float = 3,
                     y_0: float = -3,
@@ -45,7 +45,7 @@ class InfGenerator(torch.nn.Module):
             self.J = J
             self.m = m
 
-            # state at time t
+            # initialize state
             self.theta_ = self.theta(t)
             self.theta_dot_ = self.theta_dot(t)
             self.phi_ = self.phi(t)
@@ -58,8 +58,10 @@ class InfGenerator(torch.nn.Module):
             self.xi_ = self.xi_a()
 
             # coordinates
-            self.A = self.nn(self.q_).T
             self.u1 = self.u_alpha(self.q_)
+
+            # constraint
+            self.A = torch.stack([-self.u1.T[1], -(self.u1.T[2] + self.u1.T[1] * self.y_), -(self.u1.T[3] - self.u1.T[1] * self.x_)])
 
             # coefficients
             self.v_a_ = self.v_a()
@@ -202,7 +204,7 @@ class InfGenerator(torch.nn.Module):
             p2 = self.J * self.phi_dot_ - self.m * self.y_ * x_dot + self.m * self.x_ * y_dot
             p3 = self.m * x_dot
             p4 = self.m * y_dot
-            p1 = self.I * self.theta_dot_ - torch.linalg.vecdot(self.A, torch.stack([p2, p3, p4]))
+            p1 = self.I * self.theta_dot_ - torch.linalg.vecdot(self.A.T, torch.stack([p2, p3, p4]).T)
             return torch.stack([p1, p2, p3, p4, self.theta_, self.phi_, self.x_, self.y_]).T
 
         def p_dot(self, p:torch.Tensor) -> torch.Tensor:
@@ -263,8 +265,10 @@ class InfGenerator(torch.nn.Module):
             self.evaluate_q(p)
 
             # coordinates
-            self.A = self.nn(self.q_).T
             self.u1 = self.u_alpha(self.q_)
+
+            # constraint
+            self.A = torch.stack([-self.u1.T[1], -(self.u1.T[2] + self.u1.T[1] * self.y_), -(self.u1.T[3] - self.u1.T[1] * self.x_)])
 
             # state at time t
             self.evaluate_state(p)
@@ -310,11 +314,11 @@ class InfGenerator(torch.nn.Module):
             """
             compute bracket coefficients with known constraint distribution
             """
-            v1 = v[0]
-            v2 = v[1] - self.u1.T[1] * v1
-            v3 = v[2] - self.u1.T[2] * v1 + self.q_.T[3] * v2
-            v4 = v[3] - self.u1.T[3] * v1 - self.q_.T[2] * v2
-            return torch.stack([v1, v2, v3, v4])
+            k1 = v[0]
+            k2 = v[1] + self.A[0] * k1
+            k3 = v[2] + self.A[1] * k1 - self.A[0] * self.y_ * k1 + self.y_ * k2
+            k4 = v[3] + self.A[2] * k1 - self.A[0] * self.x_ * k1 - self.x_ * k2
+            return torch.tensor(torch.stack([k1, k2, k3, k4]))
 
         def compute_c_j_i(self):
             c_2_1 = self.compute_c(self.bracket(self.u_sigma_1, self.u_alpha, self.q_))
