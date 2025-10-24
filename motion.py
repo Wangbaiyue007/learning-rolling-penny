@@ -21,12 +21,12 @@ class InfGenerator(torch.nn.Module):
 
         def __init__(self, 
                     nn: torch.nn.Module = None,
-                    Omega: float = 1,
+                    Omega: float = 0.2,
                     omega: float = 0.5,
                     R: float = 0.3,
                     phi_0: float = 0,
-                    x_0: float = 3,
-                    y_0: float = -3,
+                    x_0: float = 1,
+                    y_0: float = 1,
                     I: float = 1,
                     J: float = 1,
                     m: float = 1,
@@ -228,8 +228,8 @@ class InfGenerator(torch.nn.Module):
                         torch.linalg.vecdot(c_3_1.T, p.T[:4].T) * self.v_a_[2] + \
                         torch.linalg.vecdot(c_4_1.T, p.T[:4].T) * self.v_a_[3]
             p2_dot = torch.linalg.vecdot(c_1_2.T, p.T[:4].T) * self.v_a_[0] + \
-                    torch.linalg.vecdot(c_3_2.T, p.T[:4].T) * self.v_a_[2] + \
-                    torch.linalg.vecdot(c_4_2.T, p.T[:4].T) * self.v_a_[3]
+                        torch.linalg.vecdot(c_3_2.T, p.T[:4].T) * self.v_a_[2] + \
+                        torch.linalg.vecdot(c_4_2.T, p.T[:4].T) * self.v_a_[3]
             p3_dot = torch.linalg.vecdot(c_1_3.T, p.T[:4].T) * self.v_a_[0] + \
                         torch.linalg.vecdot(c_2_3.T, p.T[:4].T) * self.v_a_[1] + \
                         torch.linalg.vecdot(c_4_3.T, p.T[:4].T) * self.v_a_[3]
@@ -247,7 +247,7 @@ class InfGenerator(torch.nn.Module):
             self.y_ = p[7]
 
             self.q_ = self.q().T
-            return
+            return self.q_
         
         def evaluate_state(self, p: torch.Tensor) -> torch.Tensor:
             # state at time t
@@ -258,9 +258,9 @@ class InfGenerator(torch.nn.Module):
             self.phi_dot_ = (p[1] + self.y_*p[2] - self.x_*p[3])/self.J
 
             return
-        
+
         def evaluate(self, p: torch.Tensor) -> torch.Tensor:
-            
+
             # configuration
             self.evaluate_q(p)
 
@@ -318,7 +318,7 @@ class InfGenerator(torch.nn.Module):
             k2 = v[1] + self.A[0] * k1
             k3 = v[2] + self.A[1] * k1 - self.A[0] * self.y_ * k1 + self.y_ * k2
             k4 = v[3] + self.A[2] * k1 - self.A[0] * self.x_ * k1 - self.x_ * k2
-            return torch.tensor(torch.stack([k1, k2, k3, k4]))
+            return torch.stack([k1, k2, k3, k4])
 
         def compute_c_j_i(self):
             c_2_1 = self.compute_c(self.bracket(self.u_sigma_1, self.u_alpha, self.q_))

@@ -34,7 +34,7 @@ network = torch.nn.Sequential(
             torch.nn.Linear(4, 10),
             Sine(),
             torch.nn.Linear(10, 10),
-            torch.nn.ELU(alpha=0.5),
+            Sine(),
             torch.nn.Linear(10, 3)
         ).to(device)
 for m in network.modules():
@@ -55,14 +55,14 @@ def visualize(true_p, pred_p, true_A, pred_A, odefunc, itr):
     ax_traj.set_title('p1 to p4 vs t')
     ax_traj.set_xlabel('t')
     ax_traj.set_ylabel('p')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 0], 'g-')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 1], 'b-')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 2], 'r-')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 3], 'y-')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 0], color='grey', linestyle='--')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 1], color='grey', linestyle='--')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 2], color='grey', linestyle='--')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 3], color='grey', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 0], 'g-', label='true p1')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 1], 'b-', label='true p2')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 2], 'r-', label='true p3')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 3], 'y-', label='true p4')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 0], color='grey', linestyle='--', label='pred p1')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 1], color='grey', linestyle='--', label='pred p2')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 2], color='grey', linestyle='--', label='pred p3')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 3], color='grey', linestyle='--', label='pred p4')
     ax_traj.set_xlim(t.cpu().min(), t.cpu().max())
     # ax_traj.set_ylim(-2, 2)
     ax_traj.legend()
@@ -123,16 +123,13 @@ if __name__ == "__main__":
     for i in range(t.size(0)):
         dynamics_true.sys.evaluate(true_p[i])
         pred_p[i] = dynamics_true.sys.p()[:4]
-        true_p_dot[i] = dynamics_true.sys.p_dot(pred_p[i])
         true_A[i] = dynamics_true.sys.A
     # visualize(true_p, pred_p, true_A, true_A, dynamics_param, 0)
 
     for itr in range(0, 2001):
         optimizer.zero_grad()
         batch_p0, batch_t, batch_p, s = get_batch(true_p, opts)
-        batch_p_dot = true_p_dot[s]
         pred_p = odeint(dynamics_param, batch_p0, batch_t).to(device)
-        # pred_A = dynamics_param.net(true_p[:, 4:]).to(device)
         loss = torch.sum(torch.square(pred_p - batch_p))
         loss.backward()
         optimizer.step()
