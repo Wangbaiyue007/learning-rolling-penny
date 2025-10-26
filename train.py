@@ -1,3 +1,4 @@
+from datetime import datetime
 from motion import InfGenerator
 import torch
 from torchdiffeq import odeint
@@ -34,6 +35,8 @@ network = torch.nn.Sequential(
             torch.nn.Linear(4, 10),
             Sine(),
             torch.nn.Linear(10, 10),
+            Sine(),
+            torch.nn.Linear(10, 10),
             torch.nn.ELU(alpha=0.5),
             torch.nn.Linear(10, 3)
         ).to(device)
@@ -55,17 +58,17 @@ def visualize(true_p, pred_p, true_A, pred_A, odefunc, itr):
     ax_traj.set_title('p1 to p4 vs t')
     ax_traj.set_xlabel('t')
     ax_traj.set_ylabel('p')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 0], 'g-')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 1], 'b-')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 2], 'r-')
-    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 3], 'y-')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 0], color='grey', linestyle='--')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 1], color='grey', linestyle='--')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 2], color='grey', linestyle='--')
-    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 3], color='grey', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 0], color='grey', linestyle='-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 1], color='grey', linestyle='-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 2], color='grey', linestyle='-')
+    ax_traj.plot(t.cpu().numpy(), true_p.cpu().numpy()[:, 3], color='grey', linestyle='-')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 0], color='black', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 1], color='black', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 2], color='black', linestyle='--')
+    ax_traj.plot(t.cpu().numpy(), pred_p.cpu().numpy()[:, 3], color='black', linestyle='--')
     ax_traj.set_xlim(t.cpu().min(), t.cpu().max())
     # ax_traj.set_ylim(-2, 2)
-    ax_traj.legend()
+    # ax_traj.legend()
 
     ax_A.cla()
     ax_A.set_title('A1 to A3 vs t')
@@ -78,31 +81,7 @@ def visualize(true_p, pred_p, true_A, pred_A, odefunc, itr):
     ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 1], color='blue', linestyle='--')
     ax_A.plot(t.cpu().numpy(), pred_A.cpu().numpy()[:, 2], color='red', linestyle='--')
     ax_A.set_xlim(t.cpu().min(), t.cpu().max())
-    ax_A.legend()
-
-    # ax_phase.cla()
-    # ax_phase.set_title('Phase Portrait')
-    # ax_phase.set_xlabel('x')
-    # ax_phase.set_ylabel('y')
-    # ax_phase.plot(true_y.cpu().numpy()[:, 0, 0], true_y.cpu().numpy()[:, 0, 1], 'g-')
-    # # ax_phase.plot(pred_y.cpu().numpy()[:, 0, 0], pred_y.cpu().numpy()[:, 0, 1], 'b--')
-    # ax_phase.set_xlim(-2, 2)
-    # ax_phase.set_ylim(-2, 2)
-
-    # ax_vecfield.cla()
-    # ax_vecfield.set_title('Learned Vector Field')
-    # ax_vecfield.set_xlabel('x')
-    # ax_vecfield.set_ylabel('y')
-
-    # y, x = np.mgrid[-2:2:21j, -2:2:21j]
-    # dydt = odefunc(0, torch.Tensor(np.stack([x, y], -1).reshape(21 * 21, 2)).to(device)).cpu().detach().numpy()
-    # mag = np.sqrt(dydt[:, 0]**2 + dydt[:, 1]**2).reshape(-1, 1)
-    # dydt = (dydt / mag)
-    # dydt = dydt.reshape(21, 21, 2)
-
-    # ax_vecfield.streamplot(x, y, dydt[:, :, 0], dydt[:, :, 1], color="black")
-    # ax_vecfield.set_xlim(-2, 2)
-    # ax_vecfield.set_ylim(-2, 2)
+    # ax_A.legend()
 
     fig.tight_layout()
     plt.savefig('png/{:03d}'.format(itr))
@@ -143,3 +122,6 @@ if __name__ == "__main__":
                 pred_p = odeint(dynamics_param, p0, t)
                 pred_A = dynamics_param.net(true_p[:, 4:]).to(device)
                 visualize(true_p, pred_p, true_A, pred_A, dynamics_param, itr)
+        
+    # save trained model
+    torch.save(dynamics_param.state_dict(), 'weights/trained_model_{}.pth'.format(datetime.now().strftime("%D:%H:%M:%S")))
