@@ -9,13 +9,18 @@ We consider learning nonholonomic dynamical systems while discovering the constr
 
 ## To cite the paper, use
 ```
-@misc{wang2025learningnonholonomicdynamicsconstraint,
-      title={Learning Nonholonomic Dynamics with Constraint Discovery}, 
-      author={Baiyue Wang and Anthony Bloch},
-      year={2025},
-      eprint={2410.15201},
-      archivePrefix={arXiv},
-      primaryClass={math.DS},
-      url={https://arxiv.org/abs/2410.15201}, 
-}
+@InProceedings{pmlr-v331-wang26d,
+  title = 	 {Learning Nonholonomic Dynamics with Constraint Discovery},
+  author =       {Wang, Baiyue and Bloch, Anthony},
+  booktitle = 	 {Proceedings of The 8th Annual Learning for Dynamics and Control Conference},
+  pages = 	 {2123--2137},
+  year = 	 {2026},
+  editor = 	 {Sukhatme, Gaurav and Lindemann, Lars and Tu, Stephen and Wierman, Adam and Atanasov, Nikolay},
+  volume = 	 {331},
+  series = 	 {Proceedings of Machine Learning Research},
+  month = 	 {17--19 Jun},
+  publisher =    {PMLR},
+  pdf = 	 {https://raw.githubusercontent.com/mlresearch/v331/main/assets/wang26d/wang26d.pdf},
+  url = 	 {https://proceedings.mlr.press/v331/wang26d.html}
+
 ```
